@@ -1,0 +1,1971 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "OpenAsy Uptime API",
+    "version": "0.1.0",
+    "summary": "Checks, their state and outages, and a public status page. Runners run the checks; the server never probes anything.",
+    "description": "Every screen of Uptime uses this API, and so can your scripts (ADR 0014). Within `/api/v1` changes are additive only; anything removed is deprecated first (ADR 0024). Errors use Problem Details (RFC 9457).\n\nChecks are defined here and run by a runner: the script at `/uptime-runner.mjs`, started from a CI cron or any machine, with `UPTIME_INGEST_TOKEN`. Everything else takes the session of a signed-in person or an API token, and each operation names the role it needs (`x-openasy-role`: viewer, editor, admin; ADR 0003). `/status` and `/api/v1/status/public` need no sign-in and show only checks marked public.\n\nSign-in, members and API tokens are under `/api/v1/auth`, provided by [@openasy/auth](https://github.com/openasy/auth#routes).",
+    "license": {
+      "name": "AGPL-3.0-only",
+      "identifier": "AGPL-3.0-only"
+    }
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "This uptime"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Checks",
+      "description": "What to check, and where each check stands."
+    },
+    {
+      "name": "Runner",
+      "description": "What a runner does: fetch the checks, post what it saw."
+    },
+    {
+      "name": "Outages",
+      "description": "When a check was down."
+    },
+    {
+      "name": "Status page",
+      "description": "What anyone may see."
+    },
+    {
+      "name": "Product",
+      "description": "Version and overview of this uptime."
+    }
+  ],
+  "paths": {
+    "/api/v1/status/public": {
+      "get": {
+        "operationId": "getPublicStatus",
+        "tags": [
+          "Status page"
+        ],
+        "summary": "Public status",
+        "security": [],
+        "description": "What the public status page at `/status` shows, as data.\n\nNeeds no sign-in.",
+        "responses": {
+          "200": {
+            "description": "Public checks only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicStatus"
+                }
+              }
+            }
+          }
+        },
+        "x-openasy-role": "none"
+      }
+    },
+    "/api/v1/checks/runnable": {
+      "get": {
+        "operationId": "listRunnableChecks",
+        "tags": [
+          "Runner"
+        ],
+        "summary": "Checks to run",
+        "security": [
+          {
+            "ingestToken": []
+          },
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "For a runner, such as the script at `/uptime-runner.mjs`. It holds targets, so it needs the runner token.\n\nTakes UPTIME_INGEST_TOKEN, or an API token with the editor role.",
+        "responses": {
+          "200": {
+            "description": "Every check that is not paused, with its target.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Runnable"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-openasy-role": "editor"
+      }
+    },
+    "/api/v1/results": {
+      "post": {
+        "operationId": "sendResults",
+        "tags": [
+          "Runner"
+        ],
+        "summary": "Send results",
+        "security": [
+          {
+            "ingestToken": []
+          },
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "What a runner saw, up to 500 at a time (gzip is fine). The whole batch is refused if one result is wrong. A result older than the newest one of its check is kept but does not move its state.\n\nTakes UPTIME_INGEST_TOKEN, or an API token with the editor role.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewResults"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Stored; the checks' states moved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Accepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-openasy-role": "editor"
+      }
+    },
+    "/api/v1/checks": {
+      "get": {
+        "operationId": "listChecks",
+        "tags": [
+          "Checks"
+        ],
+        "summary": "List checks",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Needs the viewer role.",
+        "parameters": [
+          {
+            "name": "group",
+            "in": "query",
+            "required": false,
+            "description": "Only this group.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "description": "Only checks in this state, as shown (stale is unknown).",
+            "schema": {
+              "$ref": "#/components/schemas/State"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Page size.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "The previous page's nextCursor.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "By group and name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-openasy-role": "viewer"
+      },
+      "post": {
+        "operationId": "createCheck",
+        "tags": [
+          "Checks"
+        ],
+        "summary": "Add a check",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Needs the admin role.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewCheck"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created. Nothing runs it until a runner does.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Check"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-openasy-role": "admin"
+      }
+    },
+    "/api/v1/checks/{id}": {
+      "get": {
+        "operationId": "getCheck",
+        "tags": [
+          "Checks"
+        ],
+        "summary": "Get a check",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Needs the viewer role.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The check's id.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The check, with its latency.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Check"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-openasy-role": "viewer"
+      },
+      "patch": {
+        "operationId": "updateCheck",
+        "tags": [
+          "Checks"
+        ],
+        "summary": "Change a check",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Needs the admin role.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The check's id.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCheck"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The check.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Check"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-openasy-role": "admin"
+      },
+      "delete": {
+        "operationId": "deleteCheck",
+        "tags": [
+          "Checks"
+        ],
+        "summary": "Delete a check",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Deletes its results and outages.\n\nNeeds the admin role.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The check's id.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-openasy-role": "admin"
+      }
+    },
+    "/api/v1/checks/{id}/pause": {
+      "post": {
+        "operationId": "pauseCheck",
+        "tags": [
+          "Checks"
+        ],
+        "summary": "Pause a check",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Needs the editor role.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The check's id.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paused: runners skip it, it is never stale, and the status page shows maintenance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Check"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-openasy-role": "editor"
+      }
+    },
+    "/api/v1/checks/{id}/resume": {
+      "post": {
+        "operationId": "resumeCheck",
+        "tags": [
+          "Checks"
+        ],
+        "summary": "Resume a check",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Needs the editor role.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The check's id.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Running again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Check"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-openasy-role": "editor"
+      }
+    },
+    "/api/v1/checks/{id}/results": {
+      "get": {
+        "operationId": "listResults",
+        "tags": [
+          "Checks"
+        ],
+        "summary": "List a check's results",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Needs the viewer role.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The check's id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Page size.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "The previous page's nextCursor.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Newest first, within the retention period.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-openasy-role": "viewer"
+      }
+    },
+    "/api/v1/outages": {
+      "get": {
+        "operationId": "listOutages",
+        "tags": [
+          "Outages"
+        ],
+        "summary": "List outages",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Needs the viewer role.",
+        "parameters": [
+          {
+            "name": "check",
+            "in": "query",
+            "required": false,
+            "description": "Only this check's id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "open",
+            "in": "query",
+            "required": false,
+            "description": "`true`: still going. `false`: over.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Page size.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "The previous page's nextCursor.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutageList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-openasy-role": "viewer"
+      }
+    },
+    "/api/v1/summary": {
+      "get": {
+        "operationId": "getSummary",
+        "tags": [
+          "Product"
+        ],
+        "summary": "Overview",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Needs the viewer role.",
+        "responses": {
+          "200": {
+            "description": "Checks by state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Summary"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-openasy-role": "viewer"
+      }
+    },
+    "/api/v1/version": {
+      "get": {
+        "operationId": "getVersion",
+        "tags": [
+          "Product"
+        ],
+        "summary": "Version",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The running version.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Version"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/products": {
+      "get": {
+        "operationId": "listProducts",
+        "tags": [
+          "Product"
+        ],
+        "summary": "Other products of this install",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Needs the viewer role.",
+        "responses": {
+          "200": {
+            "description": "From OPENASY_PRODUCTS, for the product switcher.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-openasy-role": "viewer"
+      }
+    },
+    "/status": {
+      "get": {
+        "operationId": "statusPage",
+        "tags": [
+          "Status page"
+        ],
+        "summary": "The public status page",
+        "description": "Plain HTML with no script, for anyone. It shows the same as `/api/v1/status/public`.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The page.",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/uptime-runner.mjs": {
+      "get": {
+        "operationId": "getRunner",
+        "tags": [
+          "Runner"
+        ],
+        "summary": "The runner script",
+        "description": "A script with no dependencies that runs on Node 20 or later: fetch it, set UPTIME_URL and UPTIME_INGEST_TOKEN, and run it from a CI cron.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The script.",
+            "content": {
+              "text/javascript": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "liveness",
+        "tags": [
+          "Product"
+        ],
+        "summary": "Liveness",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The process is running.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "readiness",
+        "tags": [
+          "Product"
+        ],
+        "summary": "Readiness",
+        "description": "Ready while the database answers.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Ready to serve.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "metrics",
+        "tags": [
+          "Product"
+        ],
+        "summary": "Prometheus metrics",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Metrics in the Prometheus text format.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "session": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "__Host-openasy-session",
+        "description": "The browser session after signing in (`openasy-session` when uptime runs on plain http://localhost). Requests that change something must come from the uptime origin."
+      },
+      "apiToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "An API token created under Settings \u2192 API tokens (`oa_uptime_...`): one role, always an expiry (ADR 0003)."
+      },
+      "adminToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Only when uptime is started by its tests or a local script: one shared token with the admin role. A production install does not have it."
+      },
+      "ingestToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "`UPTIME_INGEST_TOKEN`: for runners. It can fetch the checks and send results, nothing else."
+      }
+    },
+    "responses": {
+      "Problem": {
+        "description": "An error, as RFC 9457 Problem Details.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Problem": {
+        "type": "object",
+        "required": [
+          "type",
+          "title",
+          "status",
+          "code"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "format": "uri"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "invalid-token",
+              "invalid-json",
+              "invalid-body",
+              "conflict",
+              "not-found",
+              "not-configured",
+              "payload-too-large",
+              "internal-error",
+              "unauthenticated",
+              "invalid-credentials",
+              "mfa-required",
+              "mfa-setup-required",
+              "forbidden",
+              "cross-site",
+              "rate-limited"
+            ],
+            "description": "Stable; match on this."
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      },
+      "ProductLink": {
+        "type": "object",
+        "required": [
+          "id",
+          "url"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The product, as OpenAsy names it.",
+            "examples": [
+              "infrastructure"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The address people open it at.",
+            "examples": [
+              "https://infra.example.com"
+            ]
+          }
+        }
+      },
+      "ProductList": {
+        "type": "object",
+        "required": [
+          "products"
+        ],
+        "properties": {
+          "products": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductLink"
+            }
+          }
+        }
+      },
+      "Status": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "Version": {
+        "type": "object",
+        "required": [
+          "product",
+          "version"
+        ],
+        "properties": {
+          "product": {
+            "const": "uptime"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "CheckType": {
+        "type": "string",
+        "enum": [
+          "http",
+          "tcp",
+          "dns",
+          "tls"
+        ]
+      },
+      "Expect": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "What counts as a pass. `http`: `status` (default: any status below 400) and `text` the page must contain. `dns`: `recordType` (A, AAAA, CNAME or TXT; default A) and `record` that must be among the answers. `tls`: `minDays` the certificate must have left (default 14). `tcp` takes nothing.",
+        "properties": {
+          "status": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 599
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "recordType": {
+            "type": "string",
+            "enum": [
+              "A",
+              "AAAA",
+              "CNAME",
+              "TXT"
+            ]
+          },
+          "record": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "minDays": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 365
+          }
+        }
+      },
+      "State": {
+        "type": "string",
+        "enum": [
+          "up",
+          "degraded",
+          "down",
+          "unknown"
+        ],
+        "description": "`degraded`: failing, but fewer times in a row than `failuresToDown`. `unknown`: no result yet, or none for three intervals (`stale`)."
+      },
+      "Check": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "group",
+          "type",
+          "target",
+          "expect",
+          "intervalSeconds",
+          "failuresToDown",
+          "public",
+          "paused",
+          "tags",
+          "status",
+          "uptime",
+          "createdAt"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "group": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "type": {
+            "$ref": "#/components/schemas/CheckType"
+          },
+          "target": {
+            "type": "string"
+          },
+          "expect": {
+            "$ref": "#/components/schemas/Expect"
+          },
+          "intervalSeconds": {
+            "type": "integer",
+            "description": "How often a runner is expected to run it. A check is stale after three intervals without a result."
+          },
+          "failuresToDown": {
+            "type": "integer",
+            "description": "Failures in a row before the check is down."
+          },
+          "public": {
+            "type": "boolean"
+          },
+          "paused": {
+            "type": "boolean"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "object",
+            "required": [
+              "state",
+              "stale",
+              "since",
+              "lastResultAt",
+              "failures"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "state": {
+                "$ref": "#/components/schemas/State"
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "since": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                ]
+              },
+              "lastResultAt": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                ]
+              },
+              "failures": {
+                "type": "integer"
+              }
+            }
+          },
+          "uptime": {
+            "type": "object",
+            "required": [
+              "h24",
+              "d7",
+              "d30",
+              "d90"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "h24": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              },
+              "d7": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              },
+              "d30": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              },
+              "d90": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              }
+            },
+            "description": "Percent of the time the check was not in an outage, from its first result. Null until it has history."
+          },
+          "latency": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "p50",
+                  "p95",
+                  "p99",
+                  "samples"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "p50": {
+                    "type": "integer"
+                  },
+                  "p95": {
+                    "type": "integer"
+                  },
+                  "p99": {
+                    "type": "integer"
+                  },
+                  "samples": {
+                    "type": "integer"
+                  }
+                }
+              }
+            ],
+            "description": "Milliseconds over the last 24 hours of passing results; only in a single check."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CheckList": {
+        "type": "object",
+        "required": [
+          "checks"
+        ],
+        "properties": {
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Check"
+            }
+          },
+          "nextCursor": {
+            "type": "string",
+            "description": "Pass the previous page's nextCursor to get the next page."
+          }
+        }
+      },
+      "NewCheck": {
+        "type": "object",
+        "required": [
+          "name",
+          "type",
+          "target"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "group": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "type": {
+            "$ref": "#/components/schemas/CheckType"
+          },
+          "target": {
+            "type": "string",
+            "description": "`http`: a web address. `tcp`: host:port. `dns`: a host name. `tls`: a host name, with :port if not 443."
+          },
+          "expect": {
+            "$ref": "#/components/schemas/Expect"
+          },
+          "intervalSeconds": {
+            "type": "integer",
+            "minimum": 30,
+            "maximum": 86400,
+            "default": 300
+          },
+          "failuresToDown": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 2
+          },
+          "public": {
+            "type": "boolean",
+            "default": false,
+            "description": "Shown on the public status page by name, group and state."
+          },
+          "tags": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "UpdateCheck": {
+        "type": "object",
+        "additionalProperties": false,
+        "minProperties": 1,
+        "description": "The type cannot change.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "group": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "target": {
+            "type": "string",
+            "description": "`http`: a web address. `tcp`: host:port. `dns`: a host name. `tls`: a host name, with :port if not 443."
+          },
+          "expect": {
+            "$ref": "#/components/schemas/Expect"
+          },
+          "intervalSeconds": {
+            "type": "integer",
+            "minimum": 30,
+            "maximum": 86400,
+            "default": 300
+          },
+          "failuresToDown": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 2
+          },
+          "public": {
+            "type": "boolean",
+            "default": false,
+            "description": "Shown on the public status page by name, group and state."
+          },
+          "tags": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Runnable": {
+        "type": "object",
+        "required": [
+          "checks"
+        ],
+        "properties": {
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "name",
+                "type",
+                "target",
+                "expect",
+                "intervalSeconds"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "type": {
+                  "$ref": "#/components/schemas/CheckType"
+                },
+                "target": {
+                  "type": "string"
+                },
+                "expect": {
+                  "$ref": "#/components/schemas/Expect"
+                },
+                "intervalSeconds": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      },
+      "NewResults": {
+        "type": "object",
+        "required": [
+          "results"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "results": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "items": {
+              "type": "object",
+              "required": [
+                "checkId",
+                "ok"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "checkId": {
+                  "type": "string"
+                },
+                "ok": {
+                  "type": "boolean"
+                },
+                "time": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "When the runner ran it; within the last day and not more than five minutes ahead. Default: now."
+                },
+                "latencyMs": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 600000
+                },
+                "detail": {
+                  "type": "string",
+                  "maxLength": 500,
+                  "description": "Passwords in addresses are removed."
+                },
+                "location": {
+                  "type": "string",
+                  "maxLength": 64,
+                  "description": "Where the runner ran, such as `github`."
+                }
+              }
+            }
+          }
+        }
+      },
+      "Accepted": {
+        "type": "object",
+        "required": [
+          "accepted"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "accepted": {
+            "type": "integer"
+          }
+        }
+      },
+      "Result": {
+        "type": "object",
+        "required": [
+          "time",
+          "ok",
+          "latencyMs",
+          "detail",
+          "location"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "latencyMs": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "detail": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "location": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        }
+      },
+      "ResultList": {
+        "type": "object",
+        "required": [
+          "results"
+        ],
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Result"
+            }
+          },
+          "nextCursor": {
+            "type": "string",
+            "description": "Pass the previous page's nextCursor to get the next page."
+          }
+        }
+      },
+      "Outage": {
+        "type": "object",
+        "required": [
+          "id",
+          "check",
+          "startedAt",
+          "endedAt",
+          "durationSeconds",
+          "detail"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "check": {
+            "type": "object",
+            "required": [
+              "id",
+              "name"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The first failure of the streak that took the check down."
+          },
+          "endedAt": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string",
+                "format": "date-time"
+              }
+            ]
+          },
+          "durationSeconds": {
+            "type": "integer"
+          },
+          "detail": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        }
+      },
+      "OutageList": {
+        "type": "object",
+        "required": [
+          "outages"
+        ],
+        "properties": {
+          "outages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Outage"
+            }
+          },
+          "nextCursor": {
+            "type": "string",
+            "description": "Pass the previous page's nextCursor to get the next page."
+          }
+        }
+      },
+      "Summary": {
+        "type": "object",
+        "required": [
+          "checks",
+          "up",
+          "degraded",
+          "down",
+          "unknown",
+          "stale",
+          "paused",
+          "openOutages"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "checks": {
+            "type": "integer"
+          },
+          "up": {
+            "type": "integer"
+          },
+          "degraded": {
+            "type": "integer"
+          },
+          "down": {
+            "type": "integer"
+          },
+          "unknown": {
+            "type": "integer"
+          },
+          "stale": {
+            "type": "integer"
+          },
+          "paused": {
+            "type": "integer"
+          },
+          "openOutages": {
+            "type": "integer"
+          }
+        }
+      },
+      "PublicStatus": {
+        "type": "object",
+        "required": [
+          "updatedAt",
+          "overall",
+          "checks",
+          "incidents"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "overall": {
+            "type": "string",
+            "enum": [
+              "operational",
+              "degraded",
+              "outage",
+              "unknown"
+            ]
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "group",
+                "state",
+                "uptime90",
+                "days"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "group": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "operational",
+                    "degraded",
+                    "outage",
+                    "unknown",
+                    "maintenance"
+                  ]
+                },
+                "uptime90": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ]
+                },
+                "days": {
+                  "type": "array",
+                  "description": "The last 90 days, oldest first.",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "date",
+                      "uptime"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "date": {
+                        "type": "string",
+                        "format": "date"
+                      },
+                      "uptime": {
+                        "oneOf": [
+                          {
+                            "type": "null"
+                          },
+                          {
+                            "type": "number"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "incidents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "check",
+                "startedAt",
+                "endedAt",
+                "ongoing"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "check": {
+                  "type": "string"
+                },
+                "startedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "endedAt": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  ]
+                },
+                "ongoing": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        },
+        "description": "Only what an admin made public. No addresses, expectations, tags, details or ids."
+      }
+    }
+  }
+}

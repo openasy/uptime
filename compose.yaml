@@ -1,0 +1,38 @@
+# Uptime. Runners run the checks from where your users are and send what they saw; Uptime keeps state, outages and a
+# public status page at /status (ADR 0047).
+#
+#   openssl rand -hex 32 > openasy-kek   # uptime's key: sign-in secrets (ADR 0021). Keep it with your backups
+#   docker compose up -d
+#   docker compose logs uptime | grep 'no owner yet'   # the one-time link that creates the owner account
+services:
+  uptime:
+    image: ghcr.io/openasy/uptime:0.1.0
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp]
+    ports:
+      - "127.0.0.1:8080:8080"   # UI and API; put a TLS proxy in front to reach it from elsewhere
+    volumes:
+      - uptime-data:/data   # SQLite database: checks, results and outages
+    secrets:
+      - openasy-kek   # mounted at /run/secrets/openasy-kek
+    environment:
+      # The address people open Uptime at; with a TLS proxy in front, its https:// URL.
+      UPTIME_PUBLIC_URL: ${UPTIME_PUBLIC_URL:-http://localhost:8080}
+      # For runners: it can fetch the checks and send results, and nothing else. Or use an API token with the editor role from Settings.
+      UPTIME_INGEST_TOKEN: ${UPTIME_INGEST_TOKEN:-}
+      # The title of the public status page.
+      # UPTIME_STATUS_TITLE: Example status
+      # Sign in with your identity provider (OIDC), see the README:
+      # UPTIME_OIDC_ISSUER: https://login.example.com
+      # UPTIME_OIDC_CLIENT_ID: uptime
+      # UPTIME_OIDC_CLIENT_SECRET: ${UPTIME_OIDC_CLIENT_SECRET}
+
+volumes:
+  uptime-data:
+
+secrets:
+  openasy-kek:
+    file: ./openasy-kek
