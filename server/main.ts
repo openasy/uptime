@@ -76,11 +76,16 @@ const metricsServer = metricsPort !== undefined ? createServer(createMetricsHand
 metricsServer?.listen(metricsPort, () => log("info", "metrics on their own port", { port: metricsPort }));
 
 server.listen(port, () => log("info", "uptime started", { version, port, db: dbPath, headless, retentionDays }));
-if (!process.env.UPTIME_INGEST_TOKEN) log("warn", "UPTIME_INGEST_TOKEN is not set; a runner needs it, or an API token with the editor role (Settings, API tokens), to fetch checks and send results");
+if (!process.env.UPTIME_INGEST_TOKEN)
+  log(
+    "warn",
+    "UPTIME_INGEST_TOKEN is not set; a runner needs it, or an API token with the editor role (Settings, API tokens), to fetch checks and send results",
+  );
 if (!publicUrl.startsWith("https://") && !/^http:\/\/(localhost|127\.0\.0\.1)(:|$)/.test(publicUrl)) {
   log("warn", "UPTIME_PUBLIC_URL is not https: browsers will not keep secure cookies or allow passkeys. Put uptime behind TLS (ADR 0026)", { url: publicUrl });
 }
-if (auth.secretsInClear) log("warn", "no secrets key: TOTP secrets are stored unencrypted. Mount a 32-byte key (openssl rand -hex 32)", { file: secretsKeyFile });
+if (auth.secretsInClear)
+  log("warn", "no secrets key: TOTP secrets are stored unencrypted. Mount a 32-byte key (openssl rand -hex 32)", { file: secretsKeyFile });
 const setup = auth.setupLink();
 // No default password (ADR 0013): the first person to open this link becomes the owner.
 if (setup) log("info", "no owner yet: open this link once to create the owner account", { url: setup });

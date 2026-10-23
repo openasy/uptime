@@ -49,7 +49,8 @@ function address(raw: string, at: string): Pick<Endpoint, "url" | "kind" | "host
   const host = url.hostname.replace(/^\[|\]$/g, "");
   const port = url.port ? Number(url.port) : scheme === "http" ? 80 : scheme === "https" || scheme === "tls" ? 443 : null;
   if (scheme === "tcp" && !url.port) throw new Error(`${at}.url: a tcp:// address needs a port, such as tcp://db.example.com:5432.`);
-  if (scheme === "dns" && (url.port || (url.pathname && url.pathname !== "/"))) throw new Error(`${at}.url: a dns:// address is a name only, such as dns://www.example.com.`);
+  if (scheme === "dns" && (url.port || (url.pathname && url.pathname !== "/")))
+    throw new Error(`${at}.url: a dns:// address is a name only, such as dns://www.example.com.`);
   if ((scheme === "tcp" || scheme === "tls") && url.pathname && url.pathname !== "/") throw new Error(`${at}.url: a ${scheme}:// address is host:port only.`);
   const kind: EndpointKind = scheme === "https" ? "http" : (scheme as EndpointKind);
   return { url: kind === "http" ? url.href : `${scheme}://${url.host}`, kind, host, port };
@@ -80,11 +81,16 @@ export function parseEndpoints(text: string): Endpoint[] {
     seen.add(name.toLowerCase());
     const where = `${at} (${name})`;
     if (typeof e.url !== "string" || e.url.length > 512) throw new Error(`${where}.url is required.`);
-    if (e.group !== undefined && e.group !== null && (typeof e.group !== "string" || e.group.length > 64 || /[\x00-\x1f<>]/.test(e.group))) throw new Error(`${where}.group is a name of up to 64 characters.`);
-    if (e.server !== undefined && e.server !== null && (typeof e.server !== "string" || !SERVER.test(e.server))) throw new Error(`${where}.server is a name from the hosts file: letters, digits, dots, dashes and underscores, up to 63.`);
+    if (e.group !== undefined && e.group !== null && (typeof e.group !== "string" || e.group.length > 64 || /[\x00-\x1f<>]/.test(e.group)))
+      throw new Error(`${where}.group is a name of up to 64 characters.`);
+    if (e.server !== undefined && e.server !== null && (typeof e.server !== "string" || !SERVER.test(e.server)))
+      throw new Error(`${where}.server is a name from the hosts file: letters, digits, dots, dashes and underscores, up to 63.`);
     if (e.public !== undefined && typeof e.public !== "boolean") throw new Error(`${where}.public is true or false.`);
     if (e.expect !== undefined && !isObj(e.expect)) throw new Error(`${where}.expect is a map, such as { status: 200 }.`);
-    if (e.tags !== undefined && (!Array.isArray(e.tags) || e.tags.length > 8 || e.tags.some((t) => typeof t !== "string" || !/^[A-Za-z0-9._:-]{1,32}$/.test(t)))) {
+    if (
+      e.tags !== undefined &&
+      (!Array.isArray(e.tags) || e.tags.length > 8 || e.tags.some((t) => typeof t !== "string" || !/^[A-Za-z0-9._:-]{1,32}$/.test(t)))
+    ) {
       throw new Error(`${where}.tags is up to 8 short words of letters, digits and . _ : -.`);
     }
     return {
@@ -119,7 +125,11 @@ export interface EndpointsFileState {
  * list to `apply`, which returns warnings or throws to refuse it. A file that cannot be read or applied leaves the last
  * good list in place. `stop()` ends the polling.
  */
-export function watchEndpoints(path: string, apply: (endpoints: Endpoint[]) => string[], { everyMs = 60_000, onChange }: { everyMs?: number; onChange?: (state: EndpointsFileState) => void } = {}) {
+export function watchEndpoints(
+  path: string,
+  apply: (endpoints: Endpoint[]) => string[],
+  { everyMs = 60_000, onChange }: { everyMs?: number; onChange?: (state: EndpointsFileState) => void } = {},
+) {
   const state: EndpointsFileState = { path, appliedAt: null, entries: 0, error: null, warnings: [] };
   let seen = "";
   const read = () => {
@@ -131,7 +141,7 @@ export function watchEndpoints(path: string, apply: (endpoints: Endpoint[]) => s
       stamp = `${st.size}:${st.mtimeMs}:${createHash("sha256").update(text).digest("hex")}`;
     } catch (err) {
       const error = `Cannot read ${path}: ${(err as NodeJS.ErrnoException).code ?? (err as Error).message}`;
-      if (state.error !== error) (state.error = error), onChange?.(state);
+      if (state.error !== error) ((state.error = error), onChange?.(state));
       return;
     }
     if (stamp === seen) return;

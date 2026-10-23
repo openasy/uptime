@@ -2,8 +2,19 @@ import type { PublicStatus } from "./uptime.ts";
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
-const LABEL: Record<string, string> = { operational: "Operational", degraded: "Degraded", outage: "Outage", unknown: "No recent data", maintenance: "Maintenance" };
-const HEADLINE: Record<string, string> = { operational: "All systems operational", degraded: "Some systems are degraded", outage: "Some systems are down", unknown: "No recent data" };
+const LABEL: Record<string, string> = {
+  operational: "Operational",
+  degraded: "Degraded",
+  outage: "Outage",
+  unknown: "No recent data",
+  maintenance: "Maintenance",
+};
+const HEADLINE: Record<string, string> = {
+  operational: "All systems operational",
+  degraded: "Some systems are degraded",
+  outage: "Some systems are down",
+  unknown: "No recent data",
+};
 
 const bar = (u: number | null) => (u === null ? "none" : u >= 99.9 ? "ok" : u >= 99 ? "warn" : "bad");
 
@@ -16,13 +27,14 @@ export function renderStatusPage(data: PublicStatus, title = "Status"): string {
   for (const c of data.checks) groups.set(c.group ?? "", [...(groups.get(c.group ?? "") ?? []), c]);
   const rows = [...groups]
     .map(
-      ([group, checks]) => `<section>${group ? `<h2>${esc(group)}</h2>` : ""}${checks
-        .map(
-          (c) => `<div class="check"><div class="head"><span class="name">${esc(c.name)}</span><span class="state ${c.state}">${LABEL[c.state]}</span></div>
+      ([group, checks]) =>
+        `<section>${group ? `<h2>${esc(group)}</h2>` : ""}${checks
+          .map(
+            (c) => `<div class="check"><div class="head"><span class="name">${esc(c.name)}</span><span class="state ${c.state}">${LABEL[c.state]}</span></div>
 <div class="bars" role="img" aria-label="Uptime over the last 90 days">${c.days.map((d) => `<i class="${bar(d.uptime)}" title="${esc(d.date)}: ${d.uptime === null ? "no data" : `${d.uptime}%`}"></i>`).join("")}</div>
 <div class="foot"><span>90 days ago</span><span>${c.uptime90 === null ? "no data yet" : `${c.uptime90}% uptime`}</span><span>Today</span></div></div>`,
-        )
-        .join("")}</section>`,
+          )
+          .join("")}</section>`,
     )
     .join("");
   const incidents = data.incidents.length

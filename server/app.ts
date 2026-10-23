@@ -78,7 +78,8 @@ function send(res: ServerResponse, status: number, body: string | Buffer, type =
   res.end(body);
 }
 
-const json = (res: ServerResponse, status: number, data: unknown, headers?: Record<string, string>) => send(res, status, JSON.stringify(data), "application/json", headers);
+const json = (res: ServerResponse, status: number, data: unknown, headers?: Record<string, string>) =>
+  send(res, status, JSON.stringify(data), "application/json", headers);
 
 const TITLES: Record<ProblemCode, string> = {
   "invalid-token": "Invalid token",
@@ -131,7 +132,8 @@ async function readBody(req: IncomingMessage, limit: number): Promise<Buffer> {
 
 async function readJson(req: IncomingMessage, limit = 64 * 1024): Promise<Record<string, unknown>> {
   const raw = await readBody(req, limit).catch((err: unknown) => {
-    if (err instanceof UptimeError && err.code === "payload-too-large") throw new UptimeError(400, "invalid-json", `The body must be JSON, at most ${Math.round(limit / 1024)} KiB.`);
+    if (err instanceof UptimeError && err.code === "payload-too-large")
+      throw new UptimeError(400, "invalid-json", `The body must be JSON, at most ${Math.round(limit / 1024)} KiB.`);
     throw err;
   });
   try {
@@ -176,7 +178,22 @@ const flag = (url: URL, name: string) => {
   return v === "true";
 };
 
-export function createApp({ db, uptime, version, auth, adminToken, ingestToken, webDir, docsDir, openapi, serveMetrics = true, products = [], runnerScript, statusTitle = "Status", endpointsFile }: AppOptions) {
+export function createApp({
+  db,
+  uptime,
+  version,
+  auth,
+  adminToken,
+  ingestToken,
+  webDir,
+  docsDir,
+  openapi,
+  serveMetrics = true,
+  products = [],
+  runnerScript,
+  statusTitle = "Status",
+  endpointsFile,
+}: AppOptions) {
   // The served description includes /api/v1/auth from @openasy/auth, so the API reference documents sign-in too.
   const spec = openapi && JSON.stringify({ ...mergeOpenApi(openapi), info: { ...(openapi.info as object), version } });
   const noContent = (res: ServerResponse) => {
@@ -184,7 +201,8 @@ export function createApp({ db, uptime, version, auth, adminToken, ingestToken, 
   };
   const cursor = (url: URL) => url.searchParams.get("cursor") ?? undefined;
   const limit = (url: URL) => parseLimit(url.searchParams.get("limit"));
-  const page = <K extends string, T>(key: K, p: { items: T[]; nextCursor?: string }) => ({ [key]: p.items, ...(p.nextCursor && { nextCursor: p.nextCursor }) }) as Record<K, T[]> & { nextCursor?: string };
+  const page = <K extends string, T>(key: K, p: { items: T[]; nextCursor?: string }) =>
+    ({ [key]: p.items, ...(p.nextCursor && { nextCursor: p.nextCursor }) }) as Record<K, T[]> & { nextCursor?: string };
 
   const routes: Route[] = [
     { method: "GET", path: "/api/v1/version", auth: "none", handle: () => ({ product: "uptime", version }) },
@@ -208,7 +226,11 @@ export function createApp({ db, uptime, version, auth, adminToken, ingestToken, 
       method: "GET",
       path: "/api/v1/checks",
       auth: "viewer",
-      handle: ({ url }) => page("checks", uptime.listChecks({ group: url.searchParams.get("group") ?? undefined, state: url.searchParams.get("state") ?? undefined }, cursor(url), limit(url))),
+      handle: ({ url }) =>
+        page(
+          "checks",
+          uptime.listChecks({ group: url.searchParams.get("group") ?? undefined, state: url.searchParams.get("state") ?? undefined }, cursor(url), limit(url)),
+        ),
     },
     { method: "POST", path: "/api/v1/checks", auth: "admin", handle: async ({ res, body }) => json(res, 201, uptime.createCheck(await body())) },
     { method: "GET", path: "/api/v1/checks/:id", auth: "viewer", handle: ({ params }) => uptime.check(params[0]!) },
@@ -216,14 +238,20 @@ export function createApp({ db, uptime, version, auth, adminToken, ingestToken, 
     { method: "DELETE", path: "/api/v1/checks/:id", auth: "admin", handle: ({ res, params }) => (uptime.deleteCheck(params[0]!), noContent(res)) },
     { method: "POST", path: "/api/v1/checks/:id/pause", auth: "editor", handle: ({ params }) => uptime.setPaused(params[0]!, true) },
     { method: "POST", path: "/api/v1/checks/:id/resume", auth: "editor", handle: ({ params }) => uptime.setPaused(params[0]!, false) },
-    { method: "GET", path: "/api/v1/checks/:id/results", auth: "viewer", handle: ({ url, params }) => page("results", uptime.results(params[0]!, cursor(url), limit(url))) },
+    {
+      method: "GET",
+      path: "/api/v1/checks/:id/results",
+      auth: "viewer",
+      handle: ({ url, params }) => page("results", uptime.results(params[0]!, cursor(url), limit(url))),
+    },
 
     // Outages of every check, or of one.
     {
       method: "GET",
       path: "/api/v1/outages",
       auth: "viewer",
-      handle: ({ url }) => page("outages", uptime.outages({ checkId: url.searchParams.get("check") ?? undefined, open: flag(url, "open") }, cursor(url), limit(url))),
+      handle: ({ url }) =>
+        page("outages", uptime.outages({ checkId: url.searchParams.get("check") ?? undefined, open: flag(url, "open") }, cursor(url), limit(url))),
     },
   ];
 
@@ -236,8 +264,10 @@ export function createApp({ db, uptime, version, auth, adminToken, ingestToken, 
     if (tokenMatches(req.headers.authorization, adminToken)) return "admin token";
     if (access === "ingest") {
       // An API token or a session with the editor role can act as a runner too, for runners set up from Settings.
-      if (!ingestToken && !req.headers.authorization?.startsWith("Bearer oa_")) throw new UptimeError(503, "not-configured", "Set UPTIME_INGEST_TOKEN on uptime, or send an API token with the editor role.");
-      if (!req.headers.authorization?.startsWith("Bearer oa_")) throw new UptimeError(401, "invalid-token", "Send UPTIME_INGEST_TOKEN or an API token as a bearer token.");
+      if (!ingestToken && !req.headers.authorization?.startsWith("Bearer oa_"))
+        throw new UptimeError(503, "not-configured", "Set UPTIME_INGEST_TOKEN on uptime, or send an API token with the editor role.");
+      if (!req.headers.authorization?.startsWith("Bearer oa_"))
+        throw new UptimeError(401, "invalid-token", "Send UPTIME_INGEST_TOKEN or an API token as a bearer token.");
     }
     const p = auth.authorize(req, access === "ingest" ? "editor" : access);
     return p.kind === "session" ? p.user.name : `API token ${p.name}`;

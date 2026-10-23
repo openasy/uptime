@@ -45,7 +45,9 @@ async function call(method: string, path: string, init: RequestInit = {}, concre
   // A response is either inline or a $ref to components/responses; build the JSON pointer to its schema either way.
   const shared = declared!.$ref?.split("/").pop();
   const response = shared ? spec.components.responses[shared]! : declared!;
-  const at = shared ? `openapi#/components/responses/${shared}` : `openapi#/paths/${path.replaceAll("/", "~1")}/${method.toLowerCase()}/responses/${res.status}`;
+  const at = shared
+    ? `openapi#/components/responses/${shared}`
+    : `openapi#/paths/${path.replaceAll("/", "~1")}/${method.toLowerCase()}/responses/${res.status}`;
 
   if (!response.content) {
     expect(res.headers.get("content-length") ?? "0", `${method} ${path} ${res.status} should have no body`).toBe("0");
@@ -61,7 +63,10 @@ async function call(method: string, path: string, init: RequestInit = {}, concre
   return { res, body };
 }
 
-const auth = (token: string, body?: string, type = "application/json") => ({ headers: { authorization: `Bearer ${token}`, "content-type": type }, ...(body !== undefined && { body }) });
+const auth = (token: string, body?: string, type = "application/json") => ({
+  headers: { authorization: `Bearer ${token}`, "content-type": type },
+  ...(body !== undefined && { body }),
+});
 const admin = (body?: unknown) => auth(ADMIN_TOKEN, body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body));
 
 describe("openapi.json", () => {
@@ -101,7 +106,15 @@ describe("responses match openapi.json", () => {
   });
 
   it("checks: add, read, change, pause and every refusal", async () => {
-    check = ((await call("POST", "/api/v1/checks", admin({ name: "Shop", type: "http", target: "https://shop.example.com/health", public: true, group: "Customers", failuresToDown: 1 }))).body as { id: string }).id;
+    check = (
+      (
+        await call(
+          "POST",
+          "/api/v1/checks",
+          admin({ name: "Shop", type: "http", target: "https://shop.example.com/health", public: true, group: "Customers", failuresToDown: 1 }),
+        )
+      ).body as { id: string }
+    ).id;
     await call("POST", "/api/v1/checks", admin({ name: "Shop", type: "tcp", target: "db:5432" }));
     await call("POST", "/api/v1/checks", admin({ name: "Bad", type: "ping", target: "x" }));
     await call("POST", "/api/v1/checks", admin("nope"));
@@ -131,7 +144,11 @@ describe("responses match openapi.json", () => {
     expect(runnable.checks).toHaveLength(1);
     await call("GET", "/api/v1/checks/runnable", auth("wrong"));
     await call("GET", "/api/v1/checks/runnable", {});
-    const sent = await call("POST", "/api/v1/results", results({ checkId: check, ok: true, latencyMs: 80, location: "test", time: new Date(Date.now() - 2 * MINUTE).toISOString() }));
+    const sent = await call(
+      "POST",
+      "/api/v1/results",
+      results({ checkId: check, ok: true, latencyMs: 80, location: "test", time: new Date(Date.now() - 2 * MINUTE).toISOString() }),
+    );
     expect(sent.body).toEqual({ accepted: 1 });
     await call("POST", "/api/v1/results", results({ checkId: check, ok: false, detail: "Answered 500", time: new Date(Date.now() - MINUTE).toISOString() }));
     await call("POST", "/api/v1/results", results({ checkId: "missing", ok: true }));

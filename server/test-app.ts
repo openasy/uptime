@@ -25,13 +25,17 @@ export async function startApp(opts: Partial<AppOptions> & { version: string; st
   const runnerScript = readFileSync(new URL("../runner/uptime-runner.mjs", import.meta.url), "utf8");
   const { start: _start, ...rest } = opts;
   handler = createApp({ db, uptime, auth, ingestToken: INGEST_TOKEN, adminToken: ADMIN_TOKEN, runnerScript, ...rest });
-  const as = (token: string) => (path: string, init: RequestInit = {}) => fetch(base + path, { ...init, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...init.headers } });
+  const as =
+    (token: string) =>
+    (path: string, init: RequestInit = {}) =>
+      fetch(base + path, { ...init, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...init.headers } });
   const admin = as(ADMIN_TOKEN);
   const ingest = as(INGEST_TOKEN);
   const json = async (res: Response) => (await res.json()) as any;
   const post = (path: string, body: unknown) => admin(path, { method: "POST", body: JSON.stringify(body) });
   /** Adds an http check and returns it. */
-  const addCheck = async (name: string, extra: Record<string, unknown> = {}) => json(await post("/api/v1/checks", { name, type: "http", target: "https://shop.example.com/health", ...extra }));
+  const addCheck = async (name: string, extra: Record<string, unknown> = {}) =>
+    json(await post("/api/v1/checks", { name, type: "http", target: "https://shop.example.com/health", ...extra }));
   /** Posts results the way a runner does. `at` is minutes from the test's start. */
   const report = (checkId: string, ok: boolean, atMs = clock.now, extra: Record<string, unknown> = {}) =>
     ingest("/api/v1/results", { method: "POST", body: JSON.stringify({ results: [{ checkId, ok, time: new Date(atMs).toISOString(), ...extra }] }) });

@@ -3,14 +3,7 @@ import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import { fileId, type Endpoint } from "./endpoints.ts";
 
 export type ProblemCode =
-  | "invalid-token"
-  | "invalid-json"
-  | "invalid-body"
-  | "not-found"
-  | "conflict"
-  | "not-configured"
-  | "payload-too-large"
-  | "internal-error";
+  "invalid-token" | "invalid-json" | "invalid-body" | "not-found" | "conflict" | "not-configured" | "payload-too-large" | "internal-error";
 
 export class UptimeError extends Error {
   readonly status: number;
@@ -87,7 +80,8 @@ function parseTarget(type: CheckType, value: unknown): string {
     return url.href;
   }
   if (type === "tcp") {
-    if (!/^(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9._-]+):\d{1,5}$/.test(t) || Number(t.slice(t.lastIndexOf(":") + 1)) > 65535) throw bad("A tcp check needs host:port, such as db.example.com:5432.");
+    if (!/^(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9._-]+):\d{1,5}$/.test(t) || Number(t.slice(t.lastIndexOf(":") + 1)) > 65535)
+      throw bad("A tcp check needs host:port, such as db.example.com:5432.");
     return t;
   }
   if (type === "dns") {
@@ -102,10 +96,12 @@ function parseExpect(type: CheckType, value: unknown): Expect {
   if (value === undefined) value = {};
   if (!isObj(value)) throw bad("expect must be an object.");
   const allowed: Record<CheckType, string[]> = { http: ["status", "text"], tcp: [], dns: ["recordType", "record"], tls: ["minDays"] };
-  for (const k of Object.keys(value)) if (!allowed[type].includes(k)) throw bad(`expect.${k} does not apply to a ${type} check; it takes ${allowed[type].join(", ") || "nothing"}.`);
+  for (const k of Object.keys(value))
+    if (!allowed[type].includes(k)) throw bad(`expect.${k} does not apply to a ${type} check; it takes ${allowed[type].join(", ") || "nothing"}.`);
   const e: Expect = {};
   if (value.status !== undefined) {
-    if (!Number.isInteger(value.status) || (value.status as number) < 100 || (value.status as number) > 599) throw bad("expect.status must be an HTTP status, 100 to 599.");
+    if (!Number.isInteger(value.status) || (value.status as number) < 100 || (value.status as number) > 599)
+      throw bad("expect.status must be an HTTP status, 100 to 599.");
     e.status = value.status as number;
   }
   if (value.text !== undefined) {
@@ -113,7 +109,8 @@ function parseExpect(type: CheckType, value: unknown): Expect {
     e.text = value.text;
   }
   if (value.recordType !== undefined) {
-    if (typeof value.recordType !== "string" || !RECORD_TYPES.includes(value.recordType)) throw bad(`expect.recordType must be one of ${RECORD_TYPES.join(", ")}.`);
+    if (typeof value.recordType !== "string" || !RECORD_TYPES.includes(value.recordType))
+      throw bad(`expect.recordType must be one of ${RECORD_TYPES.join(", ")}.`);
     e.recordType = value.recordType;
   }
   if (value.record !== undefined) {
@@ -134,7 +131,8 @@ const int = (v: unknown, name: string, min: number, max: number) => {
 };
 
 function parseTags(v: unknown): string[] {
-  if (!Array.isArray(v) || v.length > 8 || v.some((t) => typeof t !== "string" || !/^[A-Za-z0-9._:-]{1,32}$/.test(t))) throw bad("tags is up to 8 short words of letters, digits and . _ : -.");
+  if (!Array.isArray(v) || v.length > 8 || v.some((t) => typeof t !== "string" || !/^[A-Za-z0-9._:-]{1,32}$/.test(t)))
+    throw bad("tags is up to 8 short words of letters, digits and . _ : -.");
   return [...new Set(v as string[])];
 }
 
@@ -189,7 +187,8 @@ export const criticalDays = (warnDays: number[]) => Math.min(7, Math.max(...warn
 /** "30,14,7,1" as a list of days, largest first. The same variable and rule as Certificates. */
 export function parseWarnDays(value: string | undefined): number[] {
   const days = (value ?? "30,14,7,1").split(",").map((d) => Number(d.trim()));
-  if (!days.length || days.some((d) => !Number.isInteger(d) || d < 1 || d > 365)) throw new Error("OPENASY_CERT_WARN_DAYS is a comma-separated list of days, 1 to 365, such as 30,14,7,1");
+  if (!days.length || days.some((d) => !Number.isInteger(d) || d < 1 || d > 365))
+    throw new Error("OPENASY_CERT_WARN_DAYS is a comma-separated list of days, 1 to 365, such as 30,14,7,1");
   return [...new Set(days)].sort((a, b) => b - a);
 }
 
@@ -219,7 +218,9 @@ export function createUptime(db: DatabaseSync, { retentionDays = 30, tlsMinDays 
 
   /** Downtime inside [start, end], from the outages that touch it. */
   function downtime(checkId: string, start: number, end: number): number {
-    const rows = db.prepare("SELECT started_at, ended_at FROM outages WHERE check_id = ? AND started_at < ? AND (ended_at IS NULL OR ended_at > ?)").all(checkId, iso(end), iso(start)) as Array<{ started_at: string; ended_at: string | null }>;
+    const rows = db
+      .prepare("SELECT started_at, ended_at FROM outages WHERE check_id = ? AND started_at < ? AND (ended_at IS NULL OR ended_at > ?)")
+      .all(checkId, iso(end), iso(start)) as Array<{ started_at: string; ended_at: string | null }>;
     let total = 0;
     for (const o of rows) total += Math.max(0, Math.min(end, o.ended_at ? Date.parse(o.ended_at) : end) - Math.max(start, Date.parse(o.started_at)));
     return total;
@@ -254,7 +255,9 @@ export function createUptime(db: DatabaseSync, { retentionDays = 30, tlsMinDays 
   }
 
   function latency(checkId: string) {
-    const rows = db.prepare("SELECT latency_ms AS l FROM results WHERE check_id = ? AND ok = 1 AND latency_ms IS NOT NULL AND time > ? ORDER BY latency_ms LIMIT 20000").all(checkId, iso(clock() - DAY)) as Array<{ l: number }>;
+    const rows = db
+      .prepare("SELECT latency_ms AS l FROM results WHERE check_id = ? AND ok = 1 AND latency_ms IS NOT NULL AND time > ? ORDER BY latency_ms LIMIT 20000")
+      .all(checkId, iso(clock() - DAY)) as Array<{ l: number }>;
     if (!rows.length) return null;
     const at = (p: number) => rows[Math.min(rows.length - 1, Math.ceil((p / 100) * rows.length) - 1)]!.l;
     return { p50: at(50), p95: at(95), p99: at(99), samples: rows.length };
@@ -306,7 +309,9 @@ export function createUptime(db: DatabaseSync, { retentionDays = 30, tlsMinDays 
     if (st && Date.parse(r.time) <= Date.parse(st.last_result_at)) return;
     if (r.ok) {
       const since = st && st.state === "up" ? st.since : r.time;
-      db.prepare("INSERT INTO state (check_id, state, failures, streak_at, since, first_result_at, last_result_at) VALUES (?, 'up', 0, NULL, ?, ?, ?) ON CONFLICT (check_id) DO UPDATE SET state = 'up', failures = 0, streak_at = NULL, since = excluded.since, last_result_at = excluded.last_result_at").run(c.id, since, st?.first_result_at ?? r.time, r.time);
+      db.prepare(
+        "INSERT INTO state (check_id, state, failures, streak_at, since, first_result_at, last_result_at) VALUES (?, 'up', 0, NULL, ?, ?, ?) ON CONFLICT (check_id) DO UPDATE SET state = 'up', failures = 0, streak_at = NULL, since = excluded.since, last_result_at = excluded.last_result_at",
+      ).run(c.id, since, st?.first_result_at ?? r.time, r.time);
       db.prepare("UPDATE outages SET ended_at = ? WHERE check_id = ? AND ended_at IS NULL").run(r.time, c.id);
       return;
     }
@@ -314,7 +319,9 @@ export function createUptime(db: DatabaseSync, { retentionDays = 30, tlsMinDays 
     const streak = st?.streak_at ?? r.time;
     const next = failures >= c.failures_to_down ? "down" : "degraded";
     const since = st && st.state === next ? st.since : r.time;
-    db.prepare("INSERT INTO state (check_id, state, failures, streak_at, since, first_result_at, last_result_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (check_id) DO UPDATE SET state = excluded.state, failures = excluded.failures, streak_at = excluded.streak_at, since = excluded.since, last_result_at = excluded.last_result_at").run(c.id, next, failures, streak, since, st?.first_result_at ?? r.time, r.time);
+    db.prepare(
+      "INSERT INTO state (check_id, state, failures, streak_at, since, first_result_at, last_result_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (check_id) DO UPDATE SET state = excluded.state, failures = excluded.failures, streak_at = excluded.streak_at, since = excluded.since, last_result_at = excluded.last_result_at",
+    ).run(c.id, next, failures, streak, since, st?.first_result_at ?? r.time, r.time);
     if (next === "down" && !db.prepare("SELECT 1 FROM outages WHERE check_id = ? AND ended_at IS NULL").get(c.id)) {
       db.prepare("INSERT INTO outages (check_id, started_at, detail) VALUES (?, ?, ?)").run(c.id, streak, r.detail);
     }
@@ -346,9 +353,20 @@ export function createUptime(db: DatabaseSync, { retentionDays = 30, tlsMinDays 
       if (db.prepare("SELECT 1 FROM checks WHERE name = ?").get(name)) throw new UptimeError(409, "conflict", "A check with this name exists.");
       const f = fields(body, type);
       const id = randomUUID();
-      db.prepare("INSERT INTO checks (id, name, grp, type, target, expect, interval_s, failures_to_down, public, tags, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
-        id, name, (f.grp as string | null | undefined) ?? null, type, parseTarget(type, body.target), JSON.stringify(parseExpect(type, body.expect)),
-        (f.interval_s as number | undefined) ?? 300, (f.failures_to_down as number | undefined) ?? 2, (f.public as number | undefined) ?? 0, (f.tags as string | undefined) ?? "[]", iso(clock()),
+      db.prepare(
+        "INSERT INTO checks (id, name, grp, type, target, expect, interval_s, failures_to_down, public, tags, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      ).run(
+        id,
+        name,
+        (f.grp as string | null | undefined) ?? null,
+        type,
+        parseTarget(type, body.target),
+        JSON.stringify(parseExpect(type, body.expect)),
+        (f.interval_s as number | undefined) ?? 300,
+        (f.failures_to_down as number | undefined) ?? 2,
+        (f.public as number | undefined) ?? 0,
+        (f.tags as string | undefined) ?? "[]",
+        iso(clock()),
       );
       return presentCheck(checkRow(id), true);
     },
@@ -362,7 +380,8 @@ export function createUptime(db: DatabaseSync, { retentionDays = 30, tlsMinDays 
       if (body.name !== undefined) {
         if (typeof body.name !== "string" || !NAME.test(body.name.trim())) throw bad("name is up to 64 letters, digits, spaces and . _ -.");
         const name = body.name.trim();
-        if (name !== c.name && db.prepare("SELECT 1 FROM checks WHERE name = ?").get(name)) throw new UptimeError(409, "conflict", "A check with this name exists.");
+        if (name !== c.name && db.prepare("SELECT 1 FROM checks WHERE name = ?").get(name))
+          throw new UptimeError(409, "conflict", "A check with this name exists.");
         f.name = name;
       }
       if (body.target !== undefined) f.target = parseTarget(c.type, body.target);
@@ -412,7 +431,19 @@ export function createUptime(db: DatabaseSync, { retentionDays = 30, tlsMinDays 
           db.prepare(
             `INSERT INTO checks (id, name, grp, type, target, expect, interval_s, failures_to_down, public, tags, created_at, source, server) VALUES (?, ?, ?, ?, ?, ?, ?, 2, ?, ?, ?, 'file', ?)
              ON CONFLICT (id) DO UPDATE SET name = excluded.name, grp = excluded.grp, target = excluded.target, expect = excluded.expect, interval_s = excluded.interval_s, public = excluded.public, tags = excluded.tags, server = excluded.server`,
-          ).run(w.id, w.e.name, w.e.group, w.e.kind, w.target, w.expect, w.e.everySeconds ?? 300, w.e.public ? 1 : 0, JSON.stringify(w.e.tags), iso(clock()), w.e.server);
+          ).run(
+            w.id,
+            w.e.name,
+            w.e.group,
+            w.e.kind,
+            w.target,
+            w.expect,
+            w.e.everySeconds ?? 300,
+            w.e.public ? 1 : 0,
+            JSON.stringify(w.e.tags),
+            iso(clock()),
+            w.e.server,
+          );
         }
         const gone = (db.prepare("SELECT id FROM checks WHERE source = 'file'").all() as Array<{ id: string }>).filter((r) => !kept.includes(r.id));
         for (const r of gone) db.prepare("DELETE FROM checks WHERE id = ?").run(r.id);
@@ -428,7 +459,9 @@ export function createUptime(db: DatabaseSync, { retentionDays = 30, tlsMinDays 
 
     listChecks(filter: { group?: string; state?: string }, cursor: string | undefined, limit: number): Page<ReturnType<typeof presentCheck>> {
       if (filter.state && !["up", "degraded", "down", "unknown"].includes(filter.state)) throw bad("state must be up, degraded, down or unknown.");
-      const rows = db.prepare(`SELECT * FROM checks ${filter.group ? "WHERE grp = ?" : ""} ORDER BY COALESCE(grp, ''), name`).all(...(filter.group ? [filter.group] : [])) as unknown as CheckRow[];
+      const rows = db
+        .prepare(`SELECT * FROM checks ${filter.group ? "WHERE grp = ?" : ""} ORDER BY COALESCE(grp, ''), name`)
+        .all(...(filter.group ? [filter.group] : [])) as unknown as CheckRow[];
       const all = rows.map((c) => presentCheck(c)).filter((c) => !filter.state || c.status.state === filter.state);
       const offset = decodeCursor(cursor);
       return { items: all.slice(offset, offset + limit), ...(all.length > offset + limit && { nextCursor: encodeCursor(offset + limit) }) };
@@ -438,14 +471,22 @@ export function createUptime(db: DatabaseSync, { retentionDays = 30, tlsMinDays 
     runnable() {
       return (db.prepare("SELECT * FROM checks WHERE paused = 0 ORDER BY name").all() as unknown as CheckRow[]).map((c) => {
         const expect = JSON.parse(c.expect) as Expect;
-        return { id: c.id, name: c.name, type: c.type, target: c.target, expect: c.type === "tls" ? { minDays: tlsMinDays, ...expect } : expect, intervalSeconds: c.interval_s };
+        return {
+          id: c.id,
+          name: c.name,
+          type: c.type,
+          target: c.target,
+          expect: c.type === "tls" ? { minDays: tlsMinDays, ...expect } : expect,
+          intervalSeconds: c.interval_s,
+        };
       });
     },
 
     /** Takes what runners saw. Everything is checked first, so a bad result does not leave the rest half stored. */
     record(body: Record<string, unknown>) {
       const { results, ...rest } = body;
-      if (Object.keys(rest).length || !Array.isArray(results) || !results.length || results.length > MAX_BATCH) throw bad(`Expected { results: [...] } with 1 to ${MAX_BATCH} results.`);
+      if (Object.keys(rest).length || !Array.isArray(results) || !results.length || results.length > MAX_BATCH)
+        throw bad(`Expected { results: [...] } with 1 to ${MAX_BATCH} results.`);
       const now = clock();
       const parsed = results.map((r, i) => {
         const at = `results[${i}]`;
@@ -463,9 +504,18 @@ export function createUptime(db: DatabaseSync, { retentionDays = 30, tlsMinDays 
           if (t < now - MAX_AGE || t > now + SKEW) throw bad(`${at}.time must be within the last day and not in the future; check the runner's clock.`);
         }
         const latencyMs = r.latencyMs === undefined || r.latencyMs === null ? null : int(r.latencyMs, `${at}.latencyMs`, 0, 600_000);
-        if (r.detail !== undefined && (typeof r.detail !== "string" || r.detail.length > 500)) throw bad(`${at}.detail must be a text of up to 500 characters.`);
-        if (r.location !== undefined && (typeof r.location !== "string" || !/^[A-Za-z0-9 ._:-]{1,64}$/.test(r.location))) throw bad(`${at}.location is a short name of up to 64 characters.`);
-        return { c, time: iso(t), ok: r.ok, latencyMs, detail: typeof r.detail === "string" ? clean(r.detail) : null, location: (r.location as string | undefined) ?? null };
+        if (r.detail !== undefined && (typeof r.detail !== "string" || r.detail.length > 500))
+          throw bad(`${at}.detail must be a text of up to 500 characters.`);
+        if (r.location !== undefined && (typeof r.location !== "string" || !/^[A-Za-z0-9 ._:-]{1,64}$/.test(r.location)))
+          throw bad(`${at}.location is a short name of up to 64 characters.`);
+        return {
+          c,
+          time: iso(t),
+          ok: r.ok,
+          latencyMs,
+          detail: typeof r.detail === "string" ? clean(r.detail) : null,
+          location: (r.location as string | undefined) ?? null,
+        };
       });
       parsed.sort((a, b) => a.time.localeCompare(b.time));
       db.exec("BEGIN IMMEDIATE");
@@ -486,8 +536,16 @@ export function createUptime(db: DatabaseSync, { retentionDays = 30, tlsMinDays 
     results(checkId: string, cursor: string | undefined, limit: number) {
       checkRow(checkId);
       const offset = decodeCursor(cursor);
-      const rows = db.prepare("SELECT time, ok, latency_ms, detail, location FROM results WHERE check_id = ? ORDER BY time DESC, id DESC LIMIT ? OFFSET ?").all(checkId, limit + 1, offset) as Array<Record<string, any>>;
-      const items = rows.slice(0, limit).map((r) => ({ time: r.time as string, ok: r.ok === 1, latencyMs: (r.latency_ms as number | null) ?? null, detail: (r.detail as string | null) ?? null, location: (r.location as string | null) ?? null }));
+      const rows = db
+        .prepare("SELECT time, ok, latency_ms, detail, location FROM results WHERE check_id = ? ORDER BY time DESC, id DESC LIMIT ? OFFSET ?")
+        .all(checkId, limit + 1, offset) as Array<Record<string, any>>;
+      const items = rows.slice(0, limit).map((r) => ({
+        time: r.time as string,
+        ok: r.ok === 1,
+        latencyMs: (r.latency_ms as number | null) ?? null,
+        detail: (r.detail as string | null) ?? null,
+        location: (r.location as string | null) ?? null,
+      }));
       return { items, ...(rows.length > limit && { nextCursor: encodeCursor(offset + limit) }) } satisfies Page<unknown>;
     },
 
@@ -498,8 +556,15 @@ export function createUptime(db: DatabaseSync, { retentionDays = 30, tlsMinDays 
       if (filter.checkId) (where.push("o.check_id = ?"), args.push(filter.checkId));
       if (filter.open !== undefined) where.push(filter.open ? "o.ended_at IS NULL" : "o.ended_at IS NOT NULL");
       const offset = decodeCursor(cursor);
-      const rows = db.prepare(`SELECT o.*, c.name FROM outages o JOIN checks c ON c.id = o.check_id ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY o.started_at DESC, o.id DESC LIMIT ? OFFSET ?`).all(...args, limit + 1, offset) as Array<Record<string, any>>;
-      return { items: rows.slice(0, limit).map(presentOutage), ...(rows.length > limit && { nextCursor: encodeCursor(offset + limit) }) } satisfies Page<unknown>;
+      const rows = db
+        .prepare(
+          `SELECT o.*, c.name FROM outages o JOIN checks c ON c.id = o.check_id ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY o.started_at DESC, o.id DESC LIMIT ? OFFSET ?`,
+        )
+        .all(...args, limit + 1, offset) as Array<Record<string, any>>;
+      return {
+        items: rows.slice(0, limit).map(presentOutage),
+        ...(rows.length > limit && { nextCursor: encodeCursor(offset + limit) }),
+      } satisfies Page<unknown>;
     },
 
     summary() {
@@ -534,12 +599,43 @@ export function createUptime(db: DatabaseSync, { retentionDays = 30, tlsMinDays 
       const checks = rows.map((c) => {
         const st = stateRow(c.id);
         const s = status(c, st);
-        const shown = c.paused ? "maintenance" : s.state === "up" ? "operational" : s.state === "degraded" ? "degraded" : s.state === "down" ? "outage" : "unknown";
-        return { name: c.name, group: c.grp, state: shown as "operational" | "degraded" | "outage" | "unknown" | "maintenance", uptime90: uptime(c.id, WINDOWS.d90, st), days: days(c.id, 90, st) };
+        const shown = c.paused
+          ? "maintenance"
+          : s.state === "up"
+            ? "operational"
+            : s.state === "degraded"
+              ? "degraded"
+              : s.state === "down"
+                ? "outage"
+                : "unknown";
+        return {
+          name: c.name,
+          group: c.grp,
+          state: shown as "operational" | "degraded" | "outage" | "unknown" | "maintenance",
+          uptime90: uptime(c.id, WINDOWS.d90, st),
+          days: days(c.id, 90, st),
+        };
       });
-      const overall = !checks.length ? "unknown" : checks.some((c) => c.state === "outage") ? "outage" : checks.some((c) => c.state === "degraded") ? "degraded" : checks.every((c) => c.state === "unknown") ? "unknown" : "operational";
-      const out = db.prepare("SELECT o.started_at, o.ended_at, c.name FROM outages o JOIN checks c ON c.id = o.check_id WHERE c.public = 1 AND (o.ended_at IS NULL OR o.ended_at > ?) ORDER BY o.started_at DESC LIMIT 50").all(iso(clock() - 7 * DAY)) as Array<{ started_at: string; ended_at: string | null; name: string }>;
-      return { updatedAt: iso(clock()), overall, checks, incidents: out.map((o) => ({ check: o.name, startedAt: o.started_at, endedAt: o.ended_at, ongoing: o.ended_at === null })) };
+      const overall = !checks.length
+        ? "unknown"
+        : checks.some((c) => c.state === "outage")
+          ? "outage"
+          : checks.some((c) => c.state === "degraded")
+            ? "degraded"
+            : checks.every((c) => c.state === "unknown")
+              ? "unknown"
+              : "operational";
+      const out = db
+        .prepare(
+          "SELECT o.started_at, o.ended_at, c.name FROM outages o JOIN checks c ON c.id = o.check_id WHERE c.public = 1 AND (o.ended_at IS NULL OR o.ended_at > ?) ORDER BY o.started_at DESC LIMIT 50",
+        )
+        .all(iso(clock() - 7 * DAY)) as Array<{ started_at: string; ended_at: string | null; name: string }>;
+      return {
+        updatedAt: iso(clock()),
+        overall,
+        checks,
+        incidents: out.map((o) => ({ check: o.name, startedAt: o.started_at, endedAt: o.ended_at, ongoing: o.ended_at === null })),
+      };
     },
 
     purge() {

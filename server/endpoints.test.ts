@@ -19,7 +19,14 @@ describe("the endpoints file", () => {
       "Resolver: dns example.com:null",
       "Old site: http old.example.com:80",
     ]);
-    expect(list[0]).toMatchObject({ url: "https://www.example.com/", group: "Public", server: "web-1", public: true, everySeconds: 60, expect: { status: 200, text: "Welcome" } });
+    expect(list[0]).toMatchObject({
+      url: "https://www.example.com/",
+      group: "Public",
+      server: "web-1",
+      public: true,
+      everySeconds: 60,
+      expect: { status: 200, text: "Welcome" },
+    });
     expect(list[2]).toMatchObject({ url: "tls://mail.example.com:465", server: null, public: false, everySeconds: null, tags: ["mail"] });
     expect(parseEndpoints("")).toEqual([]);
     expect(parseEndpoints("endpoints: []")).toEqual([]);
@@ -38,7 +45,9 @@ describe("the endpoints file", () => {
     expect(one("{ name: A, url: https://x.example.com, server: 'web 1' }")).toThrow(/server is a name from the hosts file/);
     expect(one("{ name: A, url: https://x.example.com, public: yes }")).toThrow(/true or false/);
     expect(one("{ name: A, url: https://x.example.com, port: 1 }")).toThrow(/unknown port/);
-    expect(() => parseEndpoints("endpoints:\n  - { name: A, url: https://a.example.com }\n  - { name: a, url: https://b.example.com }")).toThrow(/A is in the file twice|a is in the file twice/);
+    expect(() => parseEndpoints("endpoints:\n  - { name: A, url: https://a.example.com }\n  - { name: a, url: https://b.example.com }")).toThrow(
+      /A is in the file twice|a is in the file twice/,
+    );
   });
 
   it("is read again when it changes, and a bad version leaves the last good one", () => {
@@ -94,7 +103,14 @@ describe("checks from the file", () => {
       "Resolver:dns:example.com:file",
       "Website:http:https://www.example.com/:file",
     ]);
-    expect(list.find((c) => c.name === "Website")).toMatchObject({ id: fileId("Website"), group: "Public", server: "web-1", public: true, intervalSeconds: 60, expect: { status: 200, text: "Welcome" } });
+    expect(list.find((c) => c.name === "Website")).toMatchObject({
+      id: fileId("Website"),
+      group: "Public",
+      server: "web-1",
+      public: true,
+      intervalSeconds: 60,
+      expect: { status: 200, text: "Welcome" },
+    });
   });
 
   it("are changed in the file only, but can be paused", async () => {
@@ -111,9 +127,16 @@ describe("checks from the file", () => {
     const id = fileId("Website");
     await app.report(id, true);
     expect((await app.json(await app.admin(`/api/v1/checks/${id}/results`))).results).toHaveLength(1);
-    app.uptime.syncFile(parseEndpoints("endpoints:\n  - { name: Website, url: https://www.example.com, group: Shop }\n  - { name: Mail, url: 'tcp://mail.example.com:25' }\n"));
+    app.uptime.syncFile(
+      parseEndpoints("endpoints:\n  - { name: Website, url: https://www.example.com, group: Shop }\n  - { name: Mail, url: 'tcp://mail.example.com:25' }\n"),
+    );
     const list = await checks();
-    expect(list.filter((c) => c.source === "file").map((c) => c.name).sort()).toEqual(["Mail", "Website"]);
+    expect(
+      list
+        .filter((c) => c.source === "file")
+        .map((c) => c.name)
+        .sort(),
+    ).toEqual(["Mail", "Website"]);
     expect(list.find((c) => c.name === "Website")).toMatchObject({ group: "Shop", public: false, server: null, intervalSeconds: 300 });
     expect((await app.json(await app.admin(`/api/v1/checks/${id}/results`))).results).toHaveLength(1);
     expect(list.find((c) => c.name === "Mail")).toMatchObject({ type: "tcp", target: "mail.example.com:25" });
@@ -122,9 +145,13 @@ describe("checks from the file", () => {
 
   it("refuse a whole file with a bad entry, and warn about a name taken here", async () => {
     const before = await checks();
-    expect(() => app.uptime.syncFile(parseEndpoints("endpoints:\n  - { name: Website, url: https://www.example.com, expect: { minDays: 3 } }\n"))).toThrow(/Website: expect.minDays does not apply to a http check/);
+    expect(() => app.uptime.syncFile(parseEndpoints("endpoints:\n  - { name: Website, url: https://www.example.com, expect: { minDays: 3 } }\n"))).toThrow(
+      /Website: expect.minDays does not apply to a http check/,
+    );
     expect(await checks()).toEqual(before);
-    expect(app.uptime.syncFile(parseEndpoints("endpoints:\n  - { name: Added here, url: https://x.example.com }\n"))).toEqual(["Added here: a check with this name was added in Uptime; rename one of them."]);
+    expect(app.uptime.syncFile(parseEndpoints("endpoints:\n  - { name: Added here, url: https://x.example.com }\n"))).toEqual([
+      "Added here: a check with this name was added in Uptime; rename one of them.",
+    ]);
     expect((await checks()).filter((c) => c.source === "file")).toEqual([]);
   });
 });

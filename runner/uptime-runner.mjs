@@ -29,7 +29,11 @@ const result = (ok, started, detail) => ({ ok, latencyMs: Math.round(performance
 export async function runHttp(check, { fetchImpl = fetch, timeoutMs = TIMEOUT_MS } = {}) {
   const started = performance.now();
   try {
-    const res = await fetchImpl(check.target, { redirect: "follow", signal: AbortSignal.timeout(timeoutMs), headers: { "user-agent": "OpenAsy-Uptime-Runner" } });
+    const res = await fetchImpl(check.target, {
+      redirect: "follow",
+      signal: AbortSignal.timeout(timeoutMs),
+      headers: { "user-agent": "OpenAsy-Uptime-Runner" },
+    });
     const expect = check.expect ?? {};
     const statusOk = expect.status !== undefined ? res.status === expect.status : res.status < 400;
     let text = "";
@@ -79,10 +83,14 @@ export async function runDns(check, { resolver = dns, timeoutMs = TIMEOUT_MS } =
   const started = performance.now();
   const type = check.expect?.recordType ?? "A";
   try {
-    const answer = await Promise.race([resolver.resolve(check.target, type), new Promise((_, reject) => setTimeout(() => reject(new Error(`No answer within ${timeoutMs / 1000} s`)), timeoutMs).unref())]);
+    const answer = await Promise.race([
+      resolver.resolve(check.target, type),
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`No answer within ${timeoutMs / 1000} s`)), timeoutMs).unref()),
+    ]);
     const values = answer.map((a) => (Array.isArray(a) ? a.join("") : typeof a === "object" ? JSON.stringify(a) : String(a)));
     if (!values.length) return result(false, started, `No ${type} record`);
-    if (check.expect?.record !== undefined && !values.includes(check.expect.record)) return result(false, started, `${type} is ${values.join(", ").slice(0, 200)}, expected ${check.expect.record}`);
+    if (check.expect?.record !== undefined && !values.includes(check.expect.record))
+      return result(false, started, `${type} is ${values.join(", ").slice(0, 200)}, expected ${check.expect.record}`);
     return result(true, started, `${type} ${values.join(", ").slice(0, 200)}`);
   } catch (err) {
     return result(false, started, err?.code ?? err?.message ?? err);
@@ -128,7 +136,7 @@ export async function runCheck(check, options = {}) {
 
 /** Runs checks with a few at a time, so a thousand slow ones do not open a thousand sockets. */
 export async function runAll(checks, location, options = {}) {
-  const results = new Array(checks.length);
+  const results = Array.from({ length: checks.length });
   let next = 0;
   await Promise.all(
     Array.from({ length: Math.min(CONCURRENCY, checks.length) }, async () => {
@@ -154,7 +162,12 @@ export async function main(env = process.env, { fetchImpl = fetch, log = console
   const results = await runAll(checks, env.UPTIME_LOCATION);
   // Batches of 500 are the most the server takes at once.
   for (let i = 0; i < results.length; i += 500) {
-    const post = await fetchImpl(`${base}/api/v1/results`, { method: "POST", headers, body: JSON.stringify({ results: results.slice(i, i + 500) }), signal: AbortSignal.timeout(30_000) });
+    const post = await fetchImpl(`${base}/api/v1/results`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ results: results.slice(i, i + 500) }),
+      signal: AbortSignal.timeout(30_000),
+    });
     if (!post.ok) throw new Error(`Could not send the results: ${post.status} ${(await post.text()).slice(0, 200)}`);
   }
   const failed = results.filter((r) => !r.ok).length;

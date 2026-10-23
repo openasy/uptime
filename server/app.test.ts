@@ -15,7 +15,17 @@ describe("checks", () => {
   it("adds a check with defaults, and refuses duplicates", async () => {
     const res = await app.post("/api/v1/checks", { name: "Shop", type: "http", target: "https://shop.example.com/health" });
     expect(res.status).toBe(201);
-    expect(await app.json(res)).toMatchObject({ name: "Shop", type: "http", intervalSeconds: 300, failuresToDown: 2, public: false, paused: false, tags: [], status: { state: "unknown", stale: false }, uptime: { h24: null, d90: null } });
+    expect(await app.json(res)).toMatchObject({
+      name: "Shop",
+      type: "http",
+      intervalSeconds: 300,
+      failuresToDown: 2,
+      public: false,
+      paused: false,
+      tags: [],
+      status: { state: "unknown", stale: false },
+      uptime: { h24: null, d90: null },
+    });
     expect((await app.post("/api/v1/checks", { name: "Shop", type: "tcp", target: "db:5432" })).status).toBe(409);
   });
 
@@ -42,14 +52,22 @@ describe("checks", () => {
 
   it("changes a check, but not its type, and pauses and resumes it", async () => {
     const c = await app.addCheck("Changeable");
-    expect(await app.json(await patch(c.id, { name: "Renamed", target: "https://shop.example.com/up", public: true, intervalSeconds: 60, tags: ["web"], group: "Shop" }))).toMatchObject({ name: "Renamed", target: "https://shop.example.com/up", public: true, intervalSeconds: 60, tags: ["web"], group: "Shop" });
+    expect(
+      await app.json(
+        await patch(c.id, { name: "Renamed", target: "https://shop.example.com/up", public: true, intervalSeconds: 60, tags: ["web"], group: "Shop" }),
+      ),
+    ).toMatchObject({ name: "Renamed", target: "https://shop.example.com/up", public: true, intervalSeconds: 60, tags: ["web"], group: "Shop" });
     expect((await patch(c.id, { type: "tcp" })).status).toBe(422);
     expect((await patch(c.id, {})).status).toBe(422);
     expect((await patch(c.id, { name: "Shop" })).status).toBe(409);
     expect((await patch(c.id, { target: "not a url" })).status).toBe(422);
     expect((await patch("missing", { public: true })).status).toBe(404);
     expect(await app.json(await app.admin(`/api/v1/checks/${c.id}/pause`, { method: "POST" }))).toMatchObject({ paused: true });
-    expect((await app.json(await app.admin("/api/v1/checks/runnable", { headers: { authorization: `Bearer test-ingest-token` } }))).checks.map((x: { id: string }) => x.id)).not.toContain(c.id);
+    expect(
+      (await app.json(await app.admin("/api/v1/checks/runnable", { headers: { authorization: `Bearer test-ingest-token` } }))).checks.map(
+        (x: { id: string }) => x.id,
+      ),
+    ).not.toContain(c.id);
     expect(await app.json(await app.admin(`/api/v1/checks/${c.id}/resume`, { method: "POST" }))).toMatchObject({ paused: false });
     expect((await app.admin("/api/v1/checks/missing/pause", { method: "POST" })).status).toBe(404);
     expect((await app.admin(`/api/v1/checks/${c.id}`, { method: "DELETE" })).status).toBe(204);
@@ -88,7 +106,9 @@ describe("state, outages and uptime", () => {
     app.clock.now = t0 + 15 * MINUTE;
     await app.report(c.id, true);
     expect(await state()).toBe("up");
-    expect((await app.json(await app.admin("/api/v1/outages?open=false"))).outages).toMatchObject([{ endedAt: new Date(t0 + 15 * MINUTE).toISOString(), durationSeconds: 600 }]);
+    expect((await app.json(await app.admin("/api/v1/outages?open=false"))).outages).toMatchObject([
+      { endedAt: new Date(t0 + 15 * MINUTE).toISOString(), durationSeconds: 600 },
+    ]);
   });
 
   it("goes down at once when failuresToDown is 1, and ignores results that arrive late", async () => {
@@ -126,7 +146,12 @@ describe("state, outages and uptime", () => {
 
   it("gives latency percentiles of the last day", async () => {
     const c = await app.addCheck("Latency");
-    const results = Array.from({ length: 100 }, (_, i) => ({ checkId: c.id, ok: true, latencyMs: i + 1, time: new Date(app.clock.now - i * 1000).toISOString() }));
+    const results = Array.from({ length: 100 }, (_, i) => ({
+      checkId: c.id,
+      ok: true,
+      latencyMs: i + 1,
+      time: new Date(app.clock.now - i * 1000).toISOString(),
+    }));
     expect((await app.ingest("/api/v1/results", { method: "POST", body: JSON.stringify({ results }) })).status).toBe(201);
     expect((await app.json(await app.admin(`/api/v1/checks/${c.id}`))).latency).toEqual({ p50: 50, p95: 95, p99: 99, samples: 100 });
   });
@@ -162,7 +187,14 @@ describe("results from runners", () => {
     const before = (await app.json(await app.admin(`/api/v1/checks/${c.id}/results`))).results.length;
     const send = (results: unknown) => app.ingest("/api/v1/results", { method: "POST", body: JSON.stringify({ results }) });
     const time = new Date(app.clock.now).toISOString();
-    expect((await send([{ checkId: c.id, ok: true, time }, { checkId: "missing", ok: true }])).status).toBe(422);
+    expect(
+      (
+        await send([
+          { checkId: c.id, ok: true, time },
+          { checkId: "missing", ok: true },
+        ])
+      ).status,
+    ).toBe(422);
     expect((await app.json(await app.admin(`/api/v1/checks/${c.id}/results`))).results).toHaveLength(before);
     expect((await send([])).status).toBe(422);
     expect((await send([{ checkId: c.id }])).status).toBe(422);
@@ -198,7 +230,13 @@ describe("results from runners", () => {
 describe("the public status page", () => {
   it("shows only what an admin made public, and nothing that identifies the rest", async () => {
     app.clock.now = Date.parse("2026-11-01T00:00:00Z");
-    const pub = await app.addCheck("Website", { public: true, group: "Customers", tags: ["internal-tag"], target: "https://www.example.com/", expect: { text: "secret-marker" } });
+    const pub = await app.addCheck("Website", {
+      public: true,
+      group: "Customers",
+      tags: ["internal-tag"],
+      target: "https://www.example.com/",
+      expect: { text: "secret-marker" },
+    });
     const priv = await app.addCheck("Payroll database", { type: "tcp", target: "payroll.corp.example:5432", tags: ["finance"] });
     await app.report(pub.id, true, app.clock.now);
     await app.report(priv.id, true, app.clock.now);
@@ -208,7 +246,8 @@ describe("the public status page", () => {
     expect(data.checks[0].days).toHaveLength(90);
     const html = await (await fetch(`${app.base}/status`)).text();
     for (const text of [JSON.stringify(data), html]) {
-      for (const leak of ["Payroll", "payroll.corp", "finance", "internal-tag", "secret-marker", "www.example.com", pub.id, priv.id, "5432"]) expect(text, leak).not.toContain(leak);
+      for (const leak of ["Payroll", "payroll.corp", "finance", "internal-tag", "secret-marker", "www.example.com", pub.id, priv.id, "5432"])
+        expect(text, leak).not.toContain(leak);
     }
     expect(html).toContain("Website");
     expect(html).toContain("All systems operational");
@@ -233,7 +272,23 @@ describe("the public status page", () => {
   });
 
   it("escapes what it prints", () => {
-    const html = renderStatusPage({ updatedAt: "2026-01-01T00:00:00.000Z", overall: "operational", checks: [{ name: "<img src=x onerror=alert(1)>", group: "\"><script>x</script>", state: "operational", uptime90: 100, days: [{ date: "2026-01-01", uptime: 100 }] }], incidents: [] }, "<b>Title</b>");
+    const html = renderStatusPage(
+      {
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        overall: "operational",
+        checks: [
+          {
+            name: "<img src=x onerror=alert(1)>",
+            group: '"><script>x</script>',
+            state: "operational",
+            uptime90: 100,
+            days: [{ date: "2026-01-01", uptime: 100 }],
+          },
+        ],
+        incidents: [],
+      },
+      "<b>Title</b>",
+    );
     expect(html).not.toContain("<img");
     expect(html).not.toContain("<script>");
     expect(html).not.toContain("<b>Title");
@@ -263,7 +318,7 @@ describe("access and metrics", () => {
     expect((await fetch(`${app.base}/readyz`)).status).toBe(200);
     const metrics = await (await fetch(`${app.base}/metrics`)).text();
     expect(metrics).toContain('openasy_build_info{product="uptime",version="0.1.0"} 1');
-    const fresh = await app.addCheck("Fresh \"quoted\"".replace(/"/g, ""), { intervalSeconds: 3600 });
+    const fresh = await app.addCheck('Fresh "quoted"'.replace(/"/g, ""), { intervalSeconds: 3600 });
     await app.report(fresh.id, true);
     const failing = await app.addCheck("Failing", { failuresToDown: 1, intervalSeconds: 3600 });
     await app.report(failing.id, false);

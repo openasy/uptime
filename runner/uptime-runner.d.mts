@@ -21,6 +21,10 @@ export function runTcp(check: Check, options?: Options): Promise<Outcome>;
 export function runDns(check: Check, options?: Options): Promise<Outcome>;
 export function runTls(check: Check, options?: Options): Promise<Outcome>;
 export function runCheck(check: Check, options?: Options): Promise<Outcome>;
-export function runAll(checks: Check[], location: string | undefined, options?: Options): Promise<Array<Outcome & { checkId: string; time: string; location?: string }>>;
+export function runAll(
+  checks: Check[],
+  location: string | undefined,
+  options?: Options,
+): Promise<Array<Outcome & { checkId: string; time: string; location?: string }>>;
 export function daysUntil(validTo: string, now?: number): number;
 export function main(env?: Record<string, string | undefined>, io?: { fetchImpl?: typeof fetch; log?: (message: string) => void }): Promise<void>;

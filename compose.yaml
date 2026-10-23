@@ -13,12 +13,12 @@ services:
     security_opt: ["no-new-privileges:true"]
     tmpfs: [/tmp]
     ports:
-      - "127.0.0.1:8080:8080"   # UI and API; put a TLS proxy in front to reach it from elsewhere
+      - "127.0.0.1:8080:8080" # UI and API; put a TLS proxy in front to reach it from elsewhere
     volumes:
-      - uptime-data:/data   # SQLite database: checks, results and outages
+      - uptime-data:/data # SQLite database: checks, results and outages
       # - ./endpoints.yaml:/config/endpoints.yaml:ro   # the install's endpoints, shared with Certificates
     secrets:
-      - openasy-kek   # mounted at /run/secrets/openasy-kek
+      - openasy-kek # mounted at /run/secrets/openasy-kek
     environment:
       # The address people open Uptime at; with a TLS proxy in front, its https:// URL.
       UPTIME_PUBLIC_URL: ${UPTIME_PUBLIC_URL:-http://localhost:8080}
