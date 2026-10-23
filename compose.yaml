@@ -6,7 +6,7 @@
 #   docker compose logs uptime | grep 'no owner yet'   # the one-time link that creates the owner account
 services:
   uptime:
-    image: ghcr.io/openasy/uptime:0.1.0
+    image: ghcr.io/openasy/uptime:0.2.0
     restart: unless-stopped
     read_only: true
     cap_drop: [ALL]
