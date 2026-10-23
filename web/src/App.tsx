@@ -25,13 +25,13 @@ import {
   type Column,
   type ProductId,
   useThemePreference,
+  useAgo,
 } from "@openasy/ui";
 import { AccountSettings, AuthGate, MembersSettings, SignInSettings, TokensSettings, useAuth } from "@openasy/auth/react";
 import { Activity, ExternalLink, KeyRound, LogIn, LogOut, Plus, Settings2, Trash2, TriangleAlert, UserRound, Users } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, MfaSetupRequired, Unauthorized, type Check, type CheckType, type Expect, type Outage, type ProductLink, type Result, type State, type Summary } from "./api.ts";
-
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+import { useT, type T } from "./i18n.ts";
 
 const PAGES = ["outages", "setup", "account", "members", "signin", "tokens"] as const;
 type Route = { page: "checks" | (typeof PAGES)[number] } | { page: "check"; id: string };
@@ -61,15 +61,6 @@ function useApi() {
   );
 }
 type Call = ReturnType<typeof useApi>;
-
-function ago(iso: string | null | undefined): string {
-  if (!iso) return "never";
-  const s = Math.round((Date.now() - Date.parse(iso)) / 1000);
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.round(s / 60)} min ago`;
-  if (s < 86_400) return `${Math.round(s / 3600)} h ago`;
-  return `${Math.round(s / 86_400)} d ago`;
-}
 function duration(seconds: number): string {
   if (seconds < 60) return `${seconds} s`;
   if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
@@ -95,18 +86,18 @@ function Code({ children }: { children: ReactNode }) {
   return <pre className="m-0 overflow-x-auto rounded-md bg-subtle px-2.5 py-2 font-mono text-xs text-fg">{children}</pre>;
 }
 
-const TYPES: Array<{ value: CheckType; label: string }> = [
-  { value: "http", label: "HTTP: a web address answers" },
-  { value: "tcp", label: "TCP: a port accepts connections" },
-  { value: "dns", label: "DNS: a name resolves" },
-  { value: "tls", label: "TLS: a certificate is valid and not ending soon" },
-];
-const TARGET_HINT: Record<CheckType, string> = {
+const TYPES = (t: T): Array<{ value: CheckType; label: string }> => ([
+  { value: "http", label: t("types.httpAWebAddressAnswers") },
+  { value: "tcp", label: t("types.tcpAPortAcceptsConnections") },
+  { value: "dns", label: t("types.dnsANameResolves") },
+  { value: "tls", label: t("types.tlsACertificateIsValid") },
+]);
+const TARGET_HINT = (t: T): Record<CheckType, string> => ({
   http: "A web address, such as https://shop.example.com/health.",
   tcp: "host:port, such as db.example.com:5432.",
-  dns: "A host name, such as example.com.",
-  tls: "A host name, with :port if not 443.",
-};
+  dns: t("targetHint.aHostNameSuchAs"),
+  tls: t("targetHint.aHostNameWithPort"),
+});
 
 /** What the check expects, in words, for the list. */
 function expectation(c: Pick<Check, "type" | "expect">): string {
@@ -120,6 +111,7 @@ function expectation(c: Pick<Check, "type" | "expect">): string {
 // ---------------------------------------------------------------- Checks
 
 function CheckDialog({ call, check, onClose, onSaved }: { call: Call; check?: Check; onClose: () => void; onSaved: (c: Check) => void }) {
+  const t = useT();
   const [name, setName] = useState(check?.name ?? "");
   const [group, setGroup] = useState(check?.group ?? "");
   const [type, setType] = useState<CheckType>(check?.type ?? "http");
@@ -158,60 +150,62 @@ function CheckDialog({ call, check, onClose, onSaved }: { call: Call; check?: Ch
     <Dialog
       open
       onOpenChange={(o) => !o && onClose()}
-      title={check ? `Change ${check.name}` : "Add a check"}
-      description="A runner runs it from where it runs, and sends what it saw. Uptime itself probes nothing."
+      title={check ? t("checkDialog.change", { name: check.name }) : t("checkDialog.addACheck")}
+      description={t("checkDialog.aRunnerRunsItFrom")}
       onSubmit={save}
       footer={
         <>
           <Button type="button" onClick={onClose}>
-            Cancel
+            {t("checkDialog.cancel")}
           </Button>
           <Button type="submit" variant="primary" disabled={!name.trim() || !target.trim()}>
-            {check ? "Save" : "Add check"}
+            {check ? t("checkDialog.save") : t("checkDialog.addCheck")}
           </Button>
         </>
       }
     >
       <div className="grid gap-2 sm:grid-cols-2">
-        <TextField label="Name" value={name} onChange={(e) => setName(e.target.value)} />
-        <TextField label="Group" value={group} onChange={(e) => setGroup(e.target.value)} hint="Optional, such as Shop." />
+        <TextField label={t("checkDialog.name")} value={name} onChange={(e) => setName(e.target.value)} />
+        <TextField label={t("checkDialog.group")} value={group} onChange={(e) => setGroup(e.target.value)} hint={t("checkDialog.optionalSuchAsShop")} />
       </div>
-      {!check && <SelectField label="Type" value={type} onChange={(e) => setType(e.target.value as CheckType)} options={TYPES} />}
-      <TextField label="Target" value={target} onChange={(e) => setTarget(e.target.value)} hint={TARGET_HINT[type]} mono />
+      {!check && <SelectField label={t("checkDialog.type")} value={type} onChange={(e) => setType(e.target.value as CheckType)} options={TYPES(t)} />}
+      <TextField label={t("checkDialog.target")} value={target} onChange={(e) => setTarget(e.target.value)} hint={TARGET_HINT(t)[type]} mono />
       {type === "http" && (
         <div className="grid gap-2 sm:grid-cols-2">
-          <TextField label="Status" inputMode="numeric" value={status} onChange={(e) => setStatus(e.target.value)} hint="Empty: anything below 400." />
-          <TextField label="Text in the page" value={text} onChange={(e) => setText(e.target.value)} hint="Optional." />
+          <TextField label={t("checkDialog.status")} inputMode="numeric" value={status} onChange={(e) => setStatus(e.target.value)} hint={t("checkDialog.emptyAnythingBelow400")} />
+          <TextField label={t("checkDialog.textInThePage")} value={text} onChange={(e) => setText(e.target.value)} hint={t("checkDialog.optional")} />
         </div>
       )}
       {type === "dns" && (
         <div className="grid gap-2 sm:grid-cols-2">
           <SelectField
-            label="Record"
+            label={t("checkDialog.record")}
             value={recordType}
             onChange={(e) => setRecordType(e.target.value)}
             options={[
-              { value: "", label: "Any answer" },
+              { value: "", label: t("checkDialog.anyAnswer") },
               { value: "A", label: "A" },
               { value: "AAAA", label: "AAAA" },
               { value: "CNAME", label: "CNAME" },
               { value: "TXT", label: "TXT" },
             ]}
           />
-          {recordType && <TextField label="Among the answers" value={record} onChange={(e) => setRecord(e.target.value)} hint="Optional, such as 203.0.113.10." />}
+          {recordType && <TextField label={t("checkDialog.amongTheAnswers")} value={record} onChange={(e) => setRecord(e.target.value)} hint={t("checkDialog.optionalSuchAs2030")} />}
         </div>
       )}
-      {type === "tls" && <TextField label="Days the certificate must have left" inputMode="numeric" value={minDays} onChange={(e) => setMinDays(e.target.value)} hint="Empty: 14." />}
+      {type === "tls" && <TextField label={t("checkDialog.daysTheCertificateMustHave")} inputMode="numeric" value={minDays} onChange={(e) => setMinDays(e.target.value)} hint={t("checkDialog.empty14")} />}
       <div className="grid gap-2 sm:grid-cols-2">
-        <TextField label="Every (seconds)" inputMode="numeric" value={interval} onChange={(e) => setIntervalSeconds(e.target.value)} hint="Stale after three of these without a result." />
-        <TextField label="Down after this many failures" inputMode="numeric" value={failures} onChange={(e) => setFailures(e.target.value)} hint="One failure is degraded." error={error} />
+        <TextField label={t("checkDialog.everySeconds")} inputMode="numeric" value={interval} onChange={(e) => setIntervalSeconds(e.target.value)} hint={t("checkDialog.staleAfterThreeOfThese")} />
+        <TextField label={t("checkDialog.downAfterThisManyFailures")} inputMode="numeric" value={failures} onChange={(e) => setFailures(e.target.value)} hint={t("checkDialog.oneFailureIsDegraded")} error={error} />
       </div>
-      <Switch checked={isPublic} onCheckedChange={setPublic} label="Show on the public status page" description="By name, group and state; never the target." />
+      <Switch checked={isPublic} onCheckedChange={setPublic} label={t("checkDialog.showOnThePublicStatus")} description={t("checkDialog.byNameGroupAndState")} />
     </Dialog>
   );
 }
 
 function ChecksPage({ call, summary, reload }: { call: Call; summary?: Summary; reload: () => void }) {
+  const ago = useAgo();
+  const msg = useT();
   const { can } = useAuth();
   const [rows, setRows] = useState<Check[]>();
   const [states, setStates] = useState<string[]>([]);
@@ -230,10 +224,10 @@ function ChecksPage({ call, summary, reload }: { call: Call; summary?: Summary; 
     .filter((c) => (!states.length || states.includes(shownOf(c))) && (!groups.length || groups.includes(c.group ?? "")))
     .sort((a, b) => SHOWN_ORDER.indexOf(shownOf(a)) - SHOWN_ORDER.indexOf(shownOf(b)) || a.name.localeCompare(b.name));
   const columns: Column<Check>[] = [
-    { id: "state", header: "State", width: "110px", sortValue: (c) => SHOWN_ORDER.indexOf(shownOf(c)), cell: (c) => <StateBadge check={c} /> },
+    { id: "state", header: msg("checksPage.state"), width: "110px", sortValue: (c) => SHOWN_ORDER.indexOf(shownOf(c)), cell: (c) => <StateBadge check={c} /> },
     {
       id: "name",
-      header: "Check",
+      header: msg("checksPage.check"),
       width: "30%",
       sortValue: (c) => c.name,
       cell: (c) => (
@@ -242,8 +236,8 @@ function ChecksPage({ call, summary, reload }: { call: Call; summary?: Summary; 
             <a href={`/checks/${c.id}`} className="font-medium">
               {c.name}
             </a>
-            {c.source === "file" && <Badge tone="neutral">From file</Badge>}
-            {c.server && <Badge tone="neutral">{`on ${c.server}`}</Badge>}
+            {c.source === "file" && <Badge tone="neutral">{msg("checksPage.fromFile")}</Badge>}
+            {c.server && <Badge tone="neutral">{msg("checksPage.on", { server: c.server })}</Badge>}
           </span>
           <span className="uptime-clamp font-mono text-xs text-fg-muted" title={c.target}>
             {c.target}
@@ -251,27 +245,27 @@ function ChecksPage({ call, summary, reload }: { call: Call; summary?: Summary; 
         </span>
       ),
     },
-    { id: "type", header: "Type", cell: (c) => <Badge>{c.type.toUpperCase()}</Badge> },
-    { id: "group", header: "Group", cell: (c) => <span className="text-xs">{c.group ?? ""}</span> },
-    { id: "since", header: "Since", sortValue: (c) => c.status.since ?? "", cell: (c) => <span className="whitespace-nowrap text-xs">{c.status.since ? ago(c.status.since) : "–"}</span> },
-    { id: "h24", header: "24 h", align: "right", sortValue: (c) => c.uptime.h24 ?? -1, cell: (c) => pct(c.uptime.h24) },
-    { id: "d30", header: "30 days", align: "right", sortValue: (c) => c.uptime.d30 ?? -1, cell: (c) => pct(c.uptime.d30) },
-    { id: "last", header: "Last result", sortValue: (c) => c.status.lastResultAt ?? "", cell: (c) => <span className="whitespace-nowrap text-xs">{ago(c.status.lastResultAt)}</span> },
+    { id: "type", header: msg("checksPage.type"), cell: (c) => <Badge>{c.type.toUpperCase()}</Badge> },
+    { id: "group", header: msg("checksPage.group"), cell: (c) => <span className="text-xs">{c.group ?? ""}</span> },
+    { id: "since", header: msg("checksPage.since"), sortValue: (c) => c.status.since ?? "", cell: (c) => <span className="whitespace-nowrap text-xs">{c.status.since ? ago(c.status.since) : "–"}</span> },
+    { id: "h24", header: msg("checksPage.n24H"), align: "right", sortValue: (c) => c.uptime.h24 ?? -1, cell: (c) => pct(c.uptime.h24) },
+    { id: "d30", header: msg("checksPage.n30Days"), align: "right", sortValue: (c) => c.uptime.d30 ?? -1, cell: (c) => pct(c.uptime.d30) },
+    { id: "last", header: msg("checksPage.lastResult"), sortValue: (c) => c.status.lastResultAt ?? "", cell: (c) => <span className="whitespace-nowrap text-xs">{ago(c.status.lastResultAt)}</span> },
   ];
   const s = summary;
   return (
     <>
       <PageHeader
-        title="Checks"
-        description={s ? `${plural(s.checks, "check")}${s.paused ? `, ${s.paused} paused` : ""}` : undefined}
+        title={msg("checksPage.checks")}
+        description={s ? `${msg("plurals.check", { count: s.checks })}${s.paused ? `, ${s.paused} paused` : ""}` : undefined}
         actions={
           <span className="flex items-center gap-2">
             <Button icon={<ExternalLink />} onClick={() => window.open("/status", "_blank", "noopener")}>
-              Status page
+              {msg("checksPage.statusPage")}
             </Button>
             {can("admin") && (
               <Button variant="primary" icon={<Plus />} onClick={() => setAdding(true)}>
-                Add check
+                {msg("checksPage.addCheck")}
               </Button>
             )}
           </span>
@@ -279,37 +273,36 @@ function ChecksPage({ call, summary, reload }: { call: Call; summary?: Summary; 
       />
       {s && (
         <KpiGrid minWidth={140}>
-          <KpiCard label="Down" value={s.down} tone={s.down ? "danger" : "success"} />
-          <KpiCard label="Degraded" value={s.degraded} tone={s.degraded ? "warning" : "success"} />
-          <KpiCard label="Stale" value={s.stale} tone={s.stale ? "info" : "success"} />
-          <KpiCard label="Up" value={s.up} tone="success" />
-          <KpiCard label="Open outages" value={s.openOutages} tone={s.openOutages ? "danger" : "success"} href="/outages" />
+          <KpiCard label={msg("checksPage.down")} value={s.down} tone={s.down ? "danger" : "success"} />
+          <KpiCard label={msg("checksPage.degraded")} value={s.degraded} tone={s.degraded ? "warning" : "success"} />
+          <KpiCard label={msg("checksPage.stale")} value={s.stale} tone={s.stale ? "info" : "success"} />
+          <KpiCard label={msg("checksPage.up")} value={s.up} tone="success" />
+          <KpiCard label={msg("checksPage.openOutages")} value={s.openOutages} tone={s.openOutages ? "danger" : "success"} href="/outages" />
         </KpiGrid>
       )}
       {s?.endpointsFile?.error && (
-        <Callout tone="danger" title="The endpoints file is not applied">
-          {s.endpointsFile.error} The checks from its last good version stay until it is fixed ({s.endpointsFile.path}).
-        </Callout>
+        <Callout tone="danger" title={msg("checksPage.theEndpointsFileIsNot")}>
+          {msg("checksPage.theChecksFromItsLast", { error: s.endpointsFile.error, path: s.endpointsFile.path })}</Callout>
       )}
       {!!s?.endpointsFile?.warnings.length && (
-        <Callout tone="warning" title="The endpoints file has something to fix">
+        <Callout tone="warning" title={msg("checksPage.theEndpointsFileHasSomething")}>
           {s.endpointsFile.warnings.join(" ")}
         </Callout>
       )}
-      {s && s.stale > 0 && <p className="m-0 text-sm text-fg-muted">A stale check has had no result for three of its intervals: the runner stopped, or cannot reach Uptime. See <a href="/setup">Setup</a>.</p>}
+      {s && s.stale > 0 && <p className="m-0 text-sm text-fg-muted">{msg("checksPage.aStaleCheckHasHad")}{" "}<a href="/setup">{msg("checksPage.setup")}</a>.</p>}
       <FilterBar onClear={() => (setStates([]), setGroups([]))}>
-        <FacetFilter label="State" selected={states} onChange={setStates} options={SHOWN_ORDER.map((k) => ({ value: k, label: SHOWN_LABEL[k], count: all.filter((c) => shownOf(c) === k).length }))} />
-        {groupNames.length > 1 && <FacetFilter label="Group" selected={groups} onChange={setGroups} options={groupNames.map((g) => ({ value: g, label: g || "No group", count: all.filter((c) => (c.group ?? "") === g).length }))} />}
+        <FacetFilter label={msg("checksPage.state")} selected={states} onChange={setStates} options={SHOWN_ORDER.map((k) => ({ value: k, label: SHOWN_LABEL[k], count: all.filter((c) => shownOf(c) === k).length }))} />
+        {groupNames.length > 1 && <FacetFilter label={msg("checksPage.group")} selected={groups} onChange={setGroups} options={groupNames.map((g) => ({ value: g, label: g || msg("checksPage.noGroup"), count: all.filter((c) => (c.group ?? "") === g).length }))} />}
       </FilterBar>
       <Panel flush>
         <DataTable
-          label="Checks"
+          label={msg("checksPage.checks")}
           columns={columns}
           rows={shown}
           loading={!rows}
           getRowId={(c) => c.id}
           minWidth={960}
-          empty={<EmptyState title="No checks yet">{can("admin") ? "Add the first check, then start a runner. See Setup." : "An admin adds the checks."}</EmptyState>}
+          empty={<EmptyState title={msg("checksPage.noChecksYet")}>{can("admin") ? msg("checksPage.addTheFirstCheckThen") : msg("checksPage.anAdminAddsTheChecks")}</EmptyState>}
         />
       </Panel>
       {adding && (
@@ -328,6 +321,8 @@ function ChecksPage({ call, summary, reload }: { call: Call; summary?: Summary; 
 }
 
 function CheckPage({ call, id, reload }: { call: Call; id: string; reload: () => void }) {
+  const ago = useAgo();
+  const msg = useT();
   const { can } = useAuth();
   const [check, setCheck] = useState<Check | null>();
   const [results, setResults] = useState<Result[]>();
@@ -351,72 +346,72 @@ function CheckPage({ call, id, reload }: { call: Call; id: string; reload: () =>
 
   if (check === null)
     return (
-      <EmptyState title="Check not found">
-        It may have been deleted. <a href="/checks">Back to checks</a>.
+      <EmptyState title={msg("checkPage.checkNotFound")}>
+        {msg("checkPage.itMayHaveBeenDeleted")}{" "}<a href="/checks">{msg("checkPage.backToChecks")}</a>.
       </EmptyState>
     );
 
   const timed = (results ?? []).filter((r) => r.ok && r.latencyMs !== null).slice().reverse();
   const resultColumns: Column<Result>[] = [
-    { id: "time", header: "When", sortValue: (r) => r.time, cell: (r) => <span className="whitespace-nowrap text-xs">{ago(r.time)}</span> },
-    { id: "ok", header: "Result", cell: (r) => <StatusBadge tone={r.ok ? "success" : "danger"}>{r.ok ? "Passed" : "Failed"}</StatusBadge> },
-    { id: "latency", header: "Took", align: "right", cell: (r) => (r.latencyMs === null ? "–" : `${r.latencyMs} ms`) },
-    { id: "location", header: "From", cell: (r) => <span className="text-xs">{r.location ?? ""}</span> },
-    { id: "detail", header: "Detail", width: "40%", cell: (r) => <span className="uptime-clamp text-xs text-fg-muted" title={r.detail ?? undefined}>{r.detail ?? ""}</span> },
+    { id: "time", header: msg("checkPage.when"), sortValue: (r) => r.time, cell: (r) => <span className="whitespace-nowrap text-xs">{ago(r.time)}</span> },
+    { id: "ok", header: msg("checkPage.result"), cell: (r) => <StatusBadge tone={r.ok ? "success" : "danger"}>{r.ok ? msg("checkPage.passed") : msg("checkPage.failed")}</StatusBadge> },
+    { id: "latency", header: msg("checkPage.took"), align: "right", cell: (r) => (r.latencyMs === null ? "–" : `${r.latencyMs} ms`) },
+    { id: "location", header: msg("checkPage.from"), cell: (r) => <span className="text-xs">{r.location ?? ""}</span> },
+    { id: "detail", header: msg("checkPage.detail"), width: "40%", cell: (r) => <span className="uptime-clamp text-xs text-fg-muted" title={r.detail ?? undefined}>{r.detail ?? ""}</span> },
   ];
   const outageColumns: Column<Outage>[] = [
-    { id: "start", header: "Started", sortValue: (o) => o.startedAt, cell: (o) => <span className="whitespace-nowrap text-xs">{new Date(o.startedAt).toLocaleString()}</span> },
-    { id: "length", header: "Lasted", align: "right", cell: (o) => (o.endedAt ? duration(o.durationSeconds) : <StatusBadge tone="danger">{`Ongoing, ${duration(o.durationSeconds)}`}</StatusBadge>) },
-    { id: "detail", header: "Why", width: "50%", cell: (o) => <span className="uptime-clamp text-xs text-fg-muted" title={o.detail ?? undefined}>{o.detail ?? ""}</span> },
+    { id: "start", header: msg("checkPage.started"), sortValue: (o) => o.startedAt, cell: (o) => <span className="whitespace-nowrap text-xs">{new Date(o.startedAt).toLocaleString()}</span> },
+    { id: "length", header: msg("checkPage.lasted"), align: "right", cell: (o) => (o.endedAt ? duration(o.durationSeconds) : <StatusBadge tone="danger">{msg("checkPage.ongoing", { duration: duration(o.durationSeconds) })}</StatusBadge>) },
+    { id: "detail", header: msg("checkPage.why"), width: "50%", cell: (o) => <span className="uptime-clamp text-xs text-fg-muted" title={o.detail ?? undefined}>{o.detail ?? ""}</span> },
   ];
 
   return (
     <>
       <PageHeader
-        title={check?.name ?? "Check"}
-        description={check ? `${check.type.toUpperCase()} ${check.target}${check.server ? ` on ${check.server}` : ""} · ${expectation(check)} · every ${every(check.intervalSeconds)}, down after ${plural(check.failuresToDown, "failure")}${check.public ? " · on the status page" : ""}` : undefined}
+        title={check?.name ?? msg("checkPage.check")}
+        description={check ? msg("checkPage.everyDownAfter", { value: check.type.toUpperCase(), target: check.target, value2: check.server ? ` on ${check.server}` : "", expectation: expectation(check), every: every(check.intervalSeconds), plural: msg("plurals.failure", { count: check.failuresToDown }), value3: check.public ? " · on the status page" : "" }) : undefined}
         actions={
           check && (
             <span className="flex items-center gap-2">
               <StateBadge check={check} />
               {can("editor") && (
                 <Button onClick={() => void act(`/api/v1/checks/${id}/${check.paused ? "resume" : "pause"}`, { method: "POST" }, () => (load(), reload()))}>
-                  {check.paused ? "Resume" : "Pause"}
+                  {check.paused ? msg("checkPage.resume") : msg("checkPage.pause")}
                 </Button>
               )}
-              {can("admin") && check.source === "ui" && <Button onClick={() => setEditing(true)}>Change</Button>}
+              {can("admin") && check.source === "ui" && <Button onClick={() => setEditing(true)}>{msg("checkPage.change")}</Button>}
             </span>
           )
         }
       />
       {check && (
         <KpiGrid minWidth={130}>
-          <KpiCard label="24 hours" value={pct(check.uptime.h24)} />
-          <KpiCard label="7 days" value={pct(check.uptime.d7)} />
-          <KpiCard label="30 days" value={pct(check.uptime.d30)} />
-          <KpiCard label="90 days" value={pct(check.uptime.d90)} />
-          <KpiCard label="p95, 24 h" value={check.latency ? `${check.latency.p95} ms` : "–"} footer={check.latency ? `p50 ${check.latency.p50} ms · p99 ${check.latency.p99} ms` : undefined} />
+          <KpiCard label={msg("checkPage.n24Hours")} value={pct(check.uptime.h24)} />
+          <KpiCard label={msg("checkPage.n7Days")} value={pct(check.uptime.d7)} />
+          <KpiCard label={msg("checkPage.n30Days")} value={pct(check.uptime.d30)} />
+          <KpiCard label={msg("checkPage.n90Days")} value={pct(check.uptime.d90)} />
+          <KpiCard label={msg("checkPage.p9524H")} value={check.latency ? `${check.latency.p95} ms` : "–"} footer={check.latency ? msg("checkPage.p50MsP99Ms", { p50: check.latency.p50, p99: check.latency.p99 }) : undefined} />
         </KpiGrid>
       )}
-      {check?.source === "file" && <p className="m-0 text-sm text-fg-muted">From the endpoints file: change or remove it there. It can still be paused here.</p>}
-      {check?.paused && <p className="m-0 text-sm text-fg-muted">Paused: runners skip it, and the status page shows it as maintenance.</p>}
-      {check?.status.stale && !check.paused && <p className="m-0 text-sm text-fg-muted">No result for three intervals: the runner stopped, or cannot reach Uptime. The last known state is not shown as current.</p>}
+      {check?.source === "file" && <p className="m-0 text-sm text-fg-muted">{msg("checkPage.fromTheEndpointsFileChange")}</p>}
+      {check?.paused && <p className="m-0 text-sm text-fg-muted">{msg("checkPage.pausedRunnersSkipItAnd")}</p>}
+      {check?.status.stale && !check.paused && <p className="m-0 text-sm text-fg-muted">{msg("checkPage.noResultForThreeIntervals")}</p>}
       {error && <p className="m-0 text-sm text-danger">{error}</p>}
       {timed.length > 1 && (
-        <Panel title="Response time">
-          <TimeSeriesChart label={`Response time of ${check?.name ?? "the check"}`} series={[{ id: "latency", name: "Response time", data: timed.map((r) => r.latencyMs ?? 0) }]} labels={timed.map((r) => new Date(r.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))} format={(v) => `${Math.round(v)} ms`} area height={160} />
+        <Panel title={msg("checkPage.responseTime")}>
+          <TimeSeriesChart label={msg("checkPage.responseTimeOf", { value: check?.name ?? "the check" })} series={[{ id: "latency", name: "Response time", data: timed.map((r) => r.latencyMs ?? 0) }]} labels={timed.map((r) => new Date(r.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))} format={(v) => `${Math.round(v)} ms`} area height={160} />
         </Panel>
       )}
-      <Panel title="Outages" flush>
-        <DataTable label="Outages" columns={outageColumns} rows={outages ?? []} loading={!outages} getRowId={(o) => String(o.id)} minWidth={560} pageSize={10} empty={<EmptyState title="No outages">It has not been down.</EmptyState>} />
+      <Panel title={msg("checkPage.outages")} flush>
+        <DataTable label={msg("checkPage.outages")} columns={outageColumns} rows={outages ?? []} loading={!outages} getRowId={(o) => String(o.id)} minWidth={560} pageSize={10} empty={<EmptyState title={msg("checkPage.noOutages")}>{msg("checkPage.itHasNotBeenDown")}</EmptyState>} />
       </Panel>
-      <Panel title="Results" flush>
-        <DataTable label="Results" columns={resultColumns} rows={results ?? []} loading={!results} getRowId={(r) => `${r.time}-${r.location ?? ""}`} minWidth={760} pageSize={20} empty={<EmptyState title="No results yet">No runner has run it. See <a href="/setup">Setup</a>.</EmptyState>} />
+      <Panel title={msg("checkPage.results")} flush>
+        <DataTable label={msg("checkPage.results")} columns={resultColumns} rows={results ?? []} loading={!results} getRowId={(r) => `${r.time}-${r.location ?? ""}`} minWidth={760} pageSize={20} empty={<EmptyState title={msg("checkPage.noResultsYet")}>{msg("checkPage.noRunnerHasRunIt")}{" "}<a href="/setup">{msg("checkPage.setup")}</a>.</EmptyState>} />
       </Panel>
       {can("admin") && check?.source === "ui" && (
         <div>
           <Button icon={<Trash2 />} onClick={() => setRemoving(true)}>
-            Delete check
+            {msg("checkPage.deleteCheck")}
           </Button>
         </div>
       )}
@@ -436,15 +431,15 @@ function CheckPage({ call, id, reload }: { call: Call; id: string; reload: () =>
         <Dialog
           open={removing}
           onOpenChange={setRemoving}
-          title={`Delete ${check.name}?`}
-          description="Its results and outages are deleted with it, and it leaves the status page."
+          title={msg("checkPage.delete", { name: check.name })}
+          description={msg("checkPage.itsResultsAndOutagesAre")}
           footer={
             <>
               <Button type="button" onClick={() => setRemoving(false)}>
-                Cancel
+                {msg("checkPage.cancel")}
               </Button>
               <Button type="button" variant="primary" onClick={() => void act(`/api/v1/checks/${id}`, { method: "DELETE" }, () => (reload(), navigate("/checks")))}>
-                Delete
+                {msg("checkPage.delete2")}
               </Button>
             </>
           }
@@ -459,6 +454,7 @@ function CheckPage({ call, id, reload }: { call: Call; id: string; reload: () =>
 // ---------------------------------------------------------------- Outages
 
 function OutagesPage({ call }: { call: Call }) {
+  const t = useT();
   const [tab, setTab] = useState<"open" | "all">("open");
   const [rows, setRows] = useState<Outage[]>();
   useEffect(() => {
@@ -466,25 +462,25 @@ function OutagesPage({ call }: { call: Call }) {
     void call<{ outages: Outage[] }>(`/api/v1/outages?limit=500${tab === "open" ? "&open=true" : ""}`).then((r) => setRows(r.outages), () => setRows([]));
   }, [call, tab]);
   const columns: Column<Outage>[] = [
-    { id: "check", header: "Check", width: "26%", cell: (o) => <a href={`/checks/${o.check.id}`} className="font-medium">{o.check.name}</a> },
-    { id: "start", header: "Started", sortValue: (o) => o.startedAt, cell: (o) => <span className="whitespace-nowrap text-xs">{new Date(o.startedAt).toLocaleString()}</span> },
-    { id: "length", header: "Lasted", align: "right", sortValue: (o) => o.durationSeconds, cell: (o) => (o.endedAt ? duration(o.durationSeconds) : <StatusBadge tone="danger">{`Ongoing, ${duration(o.durationSeconds)}`}</StatusBadge>) },
-    { id: "detail", header: "Why", width: "40%", cell: (o) => <span className="uptime-clamp text-xs text-fg-muted" title={o.detail ?? undefined}>{o.detail ?? ""}</span> },
+    { id: "check", header: t("outagesPage.check"), width: "26%", cell: (o) => <a href={`/checks/${o.check.id}`} className="font-medium">{o.check.name}</a> },
+    { id: "start", header: t("outagesPage.started"), sortValue: (o) => o.startedAt, cell: (o) => <span className="whitespace-nowrap text-xs">{new Date(o.startedAt).toLocaleString()}</span> },
+    { id: "length", header: t("outagesPage.lasted"), align: "right", sortValue: (o) => o.durationSeconds, cell: (o) => (o.endedAt ? duration(o.durationSeconds) : <StatusBadge tone="danger">{t("outagesPage.ongoing", { duration: duration(o.durationSeconds) })}</StatusBadge>) },
+    { id: "detail", header: t("outagesPage.why"), width: "40%", cell: (o) => <span className="uptime-clamp text-xs text-fg-muted" title={o.detail ?? undefined}>{o.detail ?? ""}</span> },
   ];
   return (
     <>
-      <PageHeader title="Outages" description="An outage starts when a check goes down and ends with its next passing result. Ended outages are kept for 400 days." />
+      <PageHeader title={t("outagesPage.outages")} description={t("outagesPage.anOutageStartsWhenA")} />
       <SegmentedControl
-        label="Outages"
+        label={t("outagesPage.outages")}
         value={tab}
         onChange={setTab}
         options={[
-          { value: "open", label: "Ongoing" },
-          { value: "all", label: "All" },
+          { value: "open", label: t("outagesPage.ongoing2") },
+          { value: "all", label: t("outagesPage.all") },
         ]}
       />
       <Panel flush>
-        <DataTable label="Outages" columns={columns} rows={rows ?? []} loading={!rows} getRowId={(o) => String(o.id)} minWidth={760} pageSize={50} empty={<EmptyState title={tab === "open" ? "Nothing is down" : "No outages"}>{tab === "open" ? "Every check that has reported is up or degraded." : "No check has been down."}</EmptyState>} />
+        <DataTable label={t("outagesPage.outages")} columns={columns} rows={rows ?? []} loading={!rows} getRowId={(o) => String(o.id)} minWidth={760} pageSize={50} empty={<EmptyState title={tab === "open" ? t("outagesPage.nothingIsDown") : t("outagesPage.noOutages")}>{tab === "open" ? t("outagesPage.everyCheckThatHasReported") : t("outagesPage.noCheckHasBeenDown")}</EmptyState>} />
       </Panel>
     </>
   );
@@ -493,11 +489,12 @@ function OutagesPage({ call }: { call: Call }) {
 // ---------------------------------------------------------------- Setup
 
 function SetupPage() {
+  const t = useT();
   const origin = window.location.origin;
   return (
     <>
-      <PageHeader title="Setup" description="Add checks here, then run the runner from where your users are: a CI cron, a server in another network, or several. Uptime itself probes nothing." />
-      <Panel title="GitHub Actions, every 5 minutes" description="The runner is one script with no dependencies, served by this Uptime. Use UPTIME_INGEST_TOKEN, set where uptime runs, or an API token with the editor role from API tokens.">
+      <PageHeader title={t("setupPage.setup")} description={t("setupPage.addChecksHereThenRun")} />
+      <Panel title={t("setupPage.githubActionsEvery5Minutes")} description={t("setupPage.theRunnerIsOneScript")}>
         <Code>{`on:
   schedule: [{ cron: "*/5 * * * *" }]
 jobs:
@@ -512,16 +509,16 @@ jobs:
           UPTIME_INGEST_TOKEN: \${{ secrets.UPTIME_INGEST_TOKEN }}
           UPTIME_LOCATION: github`}</Code>
       </Panel>
-      <Panel title="Any machine" description="From cron or a systemd timer. Node 20 or later.">
+      <Panel title={t("setupPage.anyMachine")} description={t("setupPage.fromCronOrASystemd")}>
         <Code>{`curl -sf ${origin}/uptime-runner.mjs -o uptime-runner.mjs
 */5 * * * *  UPTIME_URL=${origin} UPTIME_INGEST_TOKEN=... UPTIME_LOCATION=office node uptime-runner.mjs`}</Code>
       </Panel>
-      <Panel title="What to know">
+      <Panel title={t("setupPage.whatToKnow")}>
         <ul className="uptime-list flex flex-col gap-1 text-sm text-fg-muted">
-          <li>One failure makes a check degraded; the failures you set in a row make it down and open an outage. One pass makes it up.</li>
-          <li>A check with no result for three of its intervals is stale: the page says the runner stopped instead of showing an old state as current.</li>
+          <li>{t("setupPage.oneFailureMakesACheck")}</li>
+          <li>{t("setupPage.aCheckWithNoResult")}</li>
           <li>
-            The public status page is at <a href={`${origin}/status`}>{origin}/status</a>, plain HTML with no script. It shows only checks marked public, by name, group and state; a paused check shows as maintenance.
+            {t("setupPage.thePublicStatusPageIs")}{" "}<a href={`${origin}/status`}>{origin}/status</a>{t("setupPage.plainHtmlWithNoScript")}
           </li>
           <li>/metrics has each check's state and staleness, to alert on in your Prometheus.</li>
         </ul>
@@ -534,8 +531,9 @@ jobs:
 
 /** Account, Members, Sign-in and API tokens: the screens come from @openasy/auth. */
 function SettingsPage({ page }: { page: "account" | "members" | "signin" | "tokens" }) {
+  const t = useT();
   const { signOut, can } = useAuth();
-  if (page !== "account" && !can("admin")) return <EmptyState title="Admins only">Ask an admin of this uptime for access.</EmptyState>;
+  if (page !== "account" && !can("admin")) return <EmptyState title={t("settingsPage.adminsOnly")}>{t("settingsPage.askAnAdminOfThis")}</EmptyState>;
   const titles = {
     account: ["Account", "Your profile, password, two-step verification and where you are signed in."],
     members: ["Members", "Who can sign in to this uptime, and with which role. Viewers see everything; editors also pause and resume checks; admins also add, change and delete checks, and manage members and tokens."],
@@ -550,7 +548,7 @@ function SettingsPage({ page }: { page: "account" | "members" | "signin" | "toke
         actions={
           page === "account" && (
             <Button icon={<LogOut />} onClick={() => void signOut()}>
-              Sign out
+              {t("settingsPage.signOut")}
             </Button>
           )
         }
@@ -561,6 +559,7 @@ function SettingsPage({ page }: { page: "account" | "members" | "signin" | "toke
 }
 
 function Product() {
+  const msg = useT();
   const [theme, setTheme] = useThemePreference();
   const { me, can } = useAuth();
   const route = parseRoute(usePath());
@@ -584,19 +583,19 @@ function Product() {
   }, [reload]);
 
   const nav = [
-    { id: "checks", label: "Checks", icon: Activity, count: summary?.checks },
-    { id: "outages", label: "Outages", icon: TriangleAlert, count: summary?.openOutages || undefined },
+    { id: "checks", label: msg("product.checks"), icon: Activity, count: summary?.checks },
+    { id: "outages", label: msg("product.outages"), icon: TriangleAlert, count: summary?.openOutages || undefined },
   ];
   const footerNav = [
-    { id: "setup", label: "Setup", icon: Settings2 },
+    { id: "setup", label: msg("product.setup"), icon: Settings2 },
     ...(can("admin")
       ? [
-          { id: "members", label: "Members", icon: Users },
-          { id: "signin", label: "Sign-in", icon: LogIn },
-          { id: "tokens", label: "API tokens", icon: KeyRound },
+          { id: "members", label: msg("product.members"), icon: Users },
+          { id: "signin", label: msg("product.signIn"), icon: LogIn },
+          { id: "tokens", label: msg("product.apiTokens"), icon: KeyRound },
         ]
       : []),
-    { id: "account", label: "Account", icon: UserRound },
+    { id: "account", label: msg("product.account"), icon: UserRound },
   ];
   const active = route.page === "check" ? "checks" : route.page;
   const roleName = me.user.role.charAt(0).toUpperCase() + me.user.role.slice(1);
