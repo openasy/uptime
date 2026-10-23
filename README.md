@@ -99,7 +99,7 @@ are on http://localhost:8080, the API reference at http://localhost:8080/api/doc
 | `UPTIME_RETENTION_DAYS` | `30` | Results older than this are deleted. Ended outages are kept for 400 days |
 | `UPTIME_METRICS_PORT` | | Serve `/metrics` on this port only (ADR 0026) |
 | `UPTIME_HEADLESS` | `false` | `true` serves only the API |
-| `UPTIME_PASSWORD_SIGN_IN`, `UPTIME_OIDC_*` | | Sign-in, as in every OpenAsy product ([@openasy/auth](https://github.com/openasy/auth)) |
+| `UPTIME_PASSWORD_SIGN_IN`, `OPENASY_OIDC_*` | | Sign-in, as in every OpenAsy product ([@openasy/auth](https://github.com/openasy/auth)) |
 
 `/metrics` has `openasy_uptime_check_up{check}` (absent while a check's state is unknown) and
 `openasy_uptime_check_stale{check}`, to alert on in your own Prometheus.

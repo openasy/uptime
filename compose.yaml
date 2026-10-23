@@ -26,9 +26,9 @@ services:
       # The title of the public status page.
       # UPTIME_STATUS_TITLE: Example status
       # Sign in with your identity provider (OIDC), see the README:
-      # UPTIME_OIDC_ISSUER: https://login.example.com
-      # UPTIME_OIDC_CLIENT_ID: uptime
-      # UPTIME_OIDC_CLIENT_SECRET: ${UPTIME_OIDC_CLIENT_SECRET}
+      # OPENASY_OIDC_ISSUER: https://login.example.com
+      # OPENASY_OIDC_CLIENT_ID: uptime
+      # OPENASY_OIDC_CLIENT_SECRET: ${OPENASY_OIDC_CLIENT_SECRET}
 
 volumes:
   uptime-data:
