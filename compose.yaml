@@ -16,6 +16,7 @@ services:
       - "127.0.0.1:8080:8080"   # UI and API; put a TLS proxy in front to reach it from elsewhere
     volumes:
       - uptime-data:/data   # SQLite database: checks, results and outages
+      # - ./endpoints.yaml:/config/endpoints.yaml:ro   # the install's endpoints, shared with Certificates
     secrets:
       - openasy-kek   # mounted at /run/secrets/openasy-kek
     environment:
@@ -25,6 +26,10 @@ services:
       UPTIME_INGEST_TOKEN: ${UPTIME_INGEST_TOKEN:-}
       # The title of the public status page.
       # UPTIME_STATUS_TITLE: Example status
+      # Checks from the endpoints file, the same file Certificates reads (ADR 0052):
+      # OPENASY_ENDPOINTS: /config/endpoints.yaml
+      # Days before a certificate ends that Certificates warns at; a TLS check fails at the critical one (7):
+      # OPENASY_CERT_WARN_DAYS: 30,14,7,1
       # Sign in with your identity provider (OIDC), see the README:
       # OPENASY_OIDC_ISSUER: https://login.example.com
       # OPENASY_OIDC_CLIENT_ID: uptime

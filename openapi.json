@@ -493,6 +493,9 @@
           "404": {
             "$ref": "#/components/responses/Problem"
           },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
           "503": {
             "$ref": "#/components/responses/Problem"
           }
@@ -1230,6 +1233,8 @@
           "public",
           "paused",
           "tags",
+          "source",
+          "server",
           "status",
           "uptime",
           "createdAt"
@@ -1280,6 +1285,25 @@
             "items": {
               "type": "string"
             }
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "ui",
+              "file"
+            ],
+            "description": "file: from the endpoints file (OPENASY_ENDPOINTS); changed there, so PATCH and DELETE answer 409. Pause and resume still work."
+          },
+          "server": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "description": "The server the endpoint runs on, by its name in the hosts file. Set from the endpoints file only."
           },
           "status": {
             "type": "object",
@@ -1797,7 +1821,8 @@
           "unknown",
           "stale",
           "paused",
-          "openOutages"
+          "openOutages",
+          "endpointsFile"
         ],
         "additionalProperties": false,
         "properties": {
@@ -1824,6 +1849,17 @@
           },
           "openOutages": {
             "type": "integer"
+          },
+          "endpointsFile": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/EndpointsFile"
+              }
+            ],
+            "description": "null when OPENASY_ENDPOINTS is not set."
           }
         }
       },
@@ -1965,6 +2001,56 @@
           }
         },
         "description": "Only what an admin made public. No addresses, expectations, tags, details or ids."
+      },
+      "EndpointsFile": {
+        "type": "object",
+        "required": [
+          "path",
+          "appliedAt",
+          "entries",
+          "error",
+          "warnings"
+        ],
+        "additionalProperties": false,
+        "description": "The endpoints file (ADR 0052). It is read again within a minute of a change; a file that cannot be applied leaves the checks from its last good version.",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "appliedAt": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string",
+                "format": "date-time"
+              }
+            ],
+            "description": "When it was last read and applied; null if it never was."
+          },
+          "entries": {
+            "type": "integer"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "description": "Why the file on disk is not applied."
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "What to fix that did not stop the file from being applied."
+          }
+        }
       }
     }
   }

@@ -50,6 +50,10 @@ const MIGRATIONS = [
    );
    CREATE INDEX outages_check ON outages (check_id, started_at DESC);
    CREATE INDEX outages_open ON outages (check_id) WHERE ended_at IS NULL`,
+  `-- Checks from the endpoints file (OPENASY_ENDPOINTS, ADR 0052) are changed there, not here; server names the
+   -- one an endpoint runs on, from the hosts file.
+   ALTER TABLE checks ADD COLUMN source TEXT NOT NULL DEFAULT 'ui' CHECK (source IN ('ui', 'file'));
+   ALTER TABLE checks ADD COLUMN server TEXT`,
 ];
 
 /** Opens the product's single SQLite file in WAL mode (ADR 0011) and migrates it forward. */

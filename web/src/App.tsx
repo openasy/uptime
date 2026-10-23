@@ -3,6 +3,7 @@ import {
   Badge,
   BrandProvider,
   Button,
+  Callout,
   DataTable,
   Dialog,
   EmptyState,
@@ -112,7 +113,7 @@ function expectation(c: Pick<Check, "type" | "expect">): string {
   const e = c.expect;
   if (c.type === "http") return [e.status !== undefined ? `status ${e.status}` : "status below 400", e.text !== undefined && `text "${e.text}"`].filter(Boolean).join(", ");
   if (c.type === "dns") return e.recordType ? `${e.recordType}${e.record ? ` ${e.record}` : ""}` : "any answer";
-  if (c.type === "tls") return `valid for ${e.minDays ?? 14}+ days`;
+  if (c.type === "tls") return e.minDays === undefined ? "certificate not yet critical" : `valid for ${e.minDays}+ days`;
   return "connects";
 }
 
@@ -237,9 +238,13 @@ function ChecksPage({ call, summary, reload }: { call: Call; summary?: Summary; 
       sortValue: (c) => c.name,
       cell: (c) => (
         <span className="flex min-w-0 flex-col">
-          <a href={`/checks/${c.id}`} className="font-medium">
-            {c.name}
-          </a>
+          <span className="flex flex-wrap items-center gap-1.5">
+            <a href={`/checks/${c.id}`} className="font-medium">
+              {c.name}
+            </a>
+            {c.source === "file" && <Badge tone="neutral">From file</Badge>}
+            {c.server && <Badge tone="neutral">{`on ${c.server}`}</Badge>}
+          </span>
           <span className="uptime-clamp font-mono text-xs text-fg-muted" title={c.target}>
             {c.target}
           </span>
@@ -280,6 +285,16 @@ function ChecksPage({ call, summary, reload }: { call: Call; summary?: Summary; 
           <KpiCard label="Up" value={s.up} tone="success" />
           <KpiCard label="Open outages" value={s.openOutages} tone={s.openOutages ? "danger" : "success"} href="/outages" />
         </KpiGrid>
+      )}
+      {s?.endpointsFile?.error && (
+        <Callout tone="danger" title="The endpoints file is not applied">
+          {s.endpointsFile.error} The checks from its last good version stay until it is fixed ({s.endpointsFile.path}).
+        </Callout>
+      )}
+      {!!s?.endpointsFile?.warnings.length && (
+        <Callout tone="warning" title="The endpoints file has something to fix">
+          {s.endpointsFile.warnings.join(" ")}
+        </Callout>
       )}
       {s && s.stale > 0 && <p className="m-0 text-sm text-fg-muted">A stale check has had no result for three of its intervals: the runner stopped, or cannot reach Uptime. See <a href="/setup">Setup</a>.</p>}
       <FilterBar onClear={() => (setStates([]), setGroups([]))}>
@@ -359,7 +374,7 @@ function CheckPage({ call, id, reload }: { call: Call; id: string; reload: () =>
     <>
       <PageHeader
         title={check?.name ?? "Check"}
-        description={check ? `${check.type.toUpperCase()} ${check.target} · ${expectation(check)} · every ${every(check.intervalSeconds)}, down after ${plural(check.failuresToDown, "failure")}${check.public ? " · on the status page" : ""}` : undefined}
+        description={check ? `${check.type.toUpperCase()} ${check.target}${check.server ? ` on ${check.server}` : ""} · ${expectation(check)} · every ${every(check.intervalSeconds)}, down after ${plural(check.failuresToDown, "failure")}${check.public ? " · on the status page" : ""}` : undefined}
         actions={
           check && (
             <span className="flex items-center gap-2">
@@ -369,7 +384,7 @@ function CheckPage({ call, id, reload }: { call: Call; id: string; reload: () =>
                   {check.paused ? "Resume" : "Pause"}
                 </Button>
               )}
-              {can("admin") && <Button onClick={() => setEditing(true)}>Change</Button>}
+              {can("admin") && check.source === "ui" && <Button onClick={() => setEditing(true)}>Change</Button>}
             </span>
           )
         }
@@ -383,6 +398,7 @@ function CheckPage({ call, id, reload }: { call: Call; id: string; reload: () =>
           <KpiCard label="p95, 24 h" value={check.latency ? `${check.latency.p95} ms` : "–"} footer={check.latency ? `p50 ${check.latency.p50} ms · p99 ${check.latency.p99} ms` : undefined} />
         </KpiGrid>
       )}
+      {check?.source === "file" && <p className="m-0 text-sm text-fg-muted">From the endpoints file: change or remove it there. It can still be paused here.</p>}
       {check?.paused && <p className="m-0 text-sm text-fg-muted">Paused: runners skip it, and the status page shows it as maintenance.</p>}
       {check?.status.stale && !check.paused && <p className="m-0 text-sm text-fg-muted">No result for three intervals: the runner stopped, or cannot reach Uptime. The last known state is not shown as current.</p>}
       {error && <p className="m-0 text-sm text-danger">{error}</p>}
@@ -397,7 +413,7 @@ function CheckPage({ call, id, reload }: { call: Call; id: string; reload: () =>
       <Panel title="Results" flush>
         <DataTable label="Results" columns={resultColumns} rows={results ?? []} loading={!results} getRowId={(r) => `${r.time}-${r.location ?? ""}`} minWidth={760} pageSize={20} empty={<EmptyState title="No results yet">No runner has run it. See <a href="/setup">Setup</a>.</EmptyState>} />
       </Panel>
-      {can("admin") && check && (
+      {can("admin") && check?.source === "ui" && (
         <div>
           <Button icon={<Trash2 />} onClick={() => setRemoving(true)}>
             Delete check

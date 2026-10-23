@@ -5,6 +5,7 @@ import { extname, join, normalize } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { createGunzip } from "node:zlib";
 import { AuthError, mergeOpenApi, sendProblem, type Auth, type Role } from "@openasy/auth";
+import type { EndpointsFileState } from "./endpoints.ts";
 import { log } from "./log.ts";
 import { countRequest, renderMetrics } from "./metrics.ts";
 import type { ProductLink } from "./products.ts";
@@ -35,6 +36,8 @@ export interface AppOptions {
   runnerScript?: string;
   /** Heading of the public status page. */
   statusTitle?: string;
+  /** Where the endpoints file stands (OPENASY_ENDPOINTS, ADR 0052); absent when there is none. */
+  endpointsFile?: () => EndpointsFileState;
 }
 
 function metricsText(uptime: Uptime, version: string) {
@@ -173,7 +176,7 @@ const flag = (url: URL, name: string) => {
   return v === "true";
 };
 
-export function createApp({ db, uptime, version, auth, adminToken, ingestToken, webDir, docsDir, openapi, serveMetrics = true, products = [], runnerScript, statusTitle = "Status" }: AppOptions) {
+export function createApp({ db, uptime, version, auth, adminToken, ingestToken, webDir, docsDir, openapi, serveMetrics = true, products = [], runnerScript, statusTitle = "Status", endpointsFile }: AppOptions) {
   // The served description includes /api/v1/auth from @openasy/auth, so the API reference documents sign-in too.
   const spec = openapi && JSON.stringify({ ...mergeOpenApi(openapi), info: { ...(openapi.info as object), version } });
   const noContent = (res: ServerResponse) => {
@@ -186,7 +189,7 @@ export function createApp({ db, uptime, version, auth, adminToken, ingestToken, 
   const routes: Route[] = [
     { method: "GET", path: "/api/v1/version", auth: "none", handle: () => ({ product: "uptime", version }) },
     { method: "GET", path: "/api/v1/products", auth: "viewer", handle: () => ({ products }) },
-    { method: "GET", path: "/api/v1/summary", auth: "viewer", handle: () => uptime.summary() },
+    { method: "GET", path: "/api/v1/summary", auth: "viewer", handle: () => ({ ...uptime.summary(), endpointsFile: endpointsFile?.() ?? null }) },
 
     // Anyone may read this; it holds only what an admin marked as public (ADR 0047).
     { method: "GET", path: "/api/v1/status/public", auth: "none", handle: () => uptime.publicStatus() },

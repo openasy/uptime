@@ -3,9 +3,10 @@ import { createServer } from "node:http";
 import { createAuth, oidcFromEnv, readSecretsKey } from "@openasy/auth";
 import { createApp, createMetricsHandler } from "./app.ts";
 import { openDb } from "./db.ts";
+import { watchEndpoints } from "./endpoints.ts";
 import { log } from "./log.ts";
 import { parseProducts } from "./products.ts";
-import { createUptime } from "./uptime.ts";
+import { createUptime, criticalDays, parseWarnDays } from "./uptime.ts";
 
 const { version } = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string };
 const port = Number(process.env.PORT ?? 8080);
@@ -21,6 +22,10 @@ const headless = process.env.UPTIME_HEADLESS === "true";
 const metricsPort = process.env.UPTIME_METRICS_PORT ? Number(process.env.UPTIME_METRICS_PORT) : undefined;
 
 if (!Number.isFinite(retentionDays) || retentionDays < 1) throw new Error("UPTIME_RETENTION_DAYS must be a number of days, 1 or more");
+// Shared with Certificates (ADR 0052): a TLS check fails once a certificate is critical, which Certificates warns about earlier.
+const tlsMinDays = criticalDays(parseWarnDays(process.env.OPENASY_CERT_WARN_DAYS));
+// The install's endpoints, one file for every product that watches them (ADR 0052).
+const endpointsPath = process.env.OPENASY_ENDPOINTS?.trim() || undefined;
 
 const db = openDb(dbPath);
 // The address people open uptime at, behind the TLS proxy (ADR 0026). Cookies, passkeys and OIDC redirects use it.
@@ -39,7 +44,15 @@ const auth = createAuth({
   // Audit log (ADR 0013): every sign-in, failure and change to members and tokens.
   onEvent: (event) => log(event.type === "sign-in-failed" ? "warn" : "info", "auth", { event }),
 });
-const uptime = createUptime(db, { retentionDays });
+const uptime = createUptime(db, { retentionDays, tlsMinDays });
+const endpoints = endpointsPath
+  ? watchEndpoints(endpointsPath, (list) => uptime.syncFile(list), {
+      onChange: (s) =>
+        s.error
+          ? log("error", "endpoints file not applied; the checks from its last good version stay", { path: s.path, error: s.error })
+          : log(s.warnings.length ? "warn" : "info", "endpoints file applied", { path: s.path, entries: s.entries, warnings: s.warnings }),
+    })
+  : undefined;
 const products = parseProducts(process.env.OPENASY_PRODUCTS);
 if (products.invalid.length) log("warn", "OPENASY_PRODUCTS: left out entries that are not id=https://address", { entries: products.invalid });
 const server = createServer(
@@ -56,6 +69,7 @@ const server = createServer(
     openapi,
     serveMetrics: metricsPort === undefined,
     products: products.products,
+    endpointsFile: endpoints && (() => endpoints.state),
   }),
 );
 const metricsServer = metricsPort !== undefined ? createServer(createMetricsHandler(uptime, version)) : undefined;
@@ -77,6 +91,7 @@ const timers: NodeJS.Timeout[] = [setInterval(() => auth.purge(), 5 * 60_000), s
 function shutdown(signal: string) {
   log("info", "shutting down", { signal });
   for (const t of timers) clearInterval(t);
+  endpoints?.stop();
   metricsServer?.close();
   server.close(() => {
     db.close();

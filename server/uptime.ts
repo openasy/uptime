@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
+import { fileId, type Endpoint } from "./endpoints.ts";
 
 export type ProblemCode =
   | "invalid-token"
@@ -156,6 +157,8 @@ interface CheckRow {
   paused: number;
   tags: string;
   created_at: string;
+  source: "ui" | "file";
+  server: string | null;
 }
 
 interface StateRow {
@@ -171,14 +174,36 @@ interface StateRow {
 export interface UptimeOptions {
   /** Results older than this are deleted. Outages stay for 400 days (ADR 0015). */
   retentionDays?: number;
+  /**
+   * Days a TLS check wants left on a certificate when it does not say: the critical threshold shared with
+   * Certificates (OPENASY_CERT_WARN_DAYS), so the two products do not alert on the same certificate at the same step.
+   */
+  tlsMinDays?: number;
   /** For tests. */
   clock?: () => number;
+}
+
+/** The critical threshold of a warn-days list, as Certificates computes it: 7, or the largest value when it is less. */
+export const criticalDays = (warnDays: number[]) => Math.min(7, Math.max(...warnDays));
+
+/** "30,14,7,1" as a list of days, largest first. The same variable and rule as Certificates. */
+export function parseWarnDays(value: string | undefined): number[] {
+  const days = (value ?? "30,14,7,1").split(",").map((d) => Number(d.trim()));
+  if (!days.length || days.some((d) => !Number.isInteger(d) || d < 1 || d > 365)) throw new Error("OPENASY_CERT_WARN_DAYS is a comma-separated list of days, 1 to 365, such as 30,14,7,1");
+  return [...new Set(days)].sort((a, b) => b - a);
+}
+
+/** What a check runs against, from an endpoint in the file. */
+function targetOf(e: Endpoint): string {
+  if (e.kind === "http") return e.url;
+  const rest = e.url.slice(e.url.indexOf("//") + 2);
+  return e.kind === "tls" && e.port === 443 ? rest.replace(/:443$/, "") : rest;
 }
 
 const WINDOWS = { h24: DAY, d7: 7 * DAY, d30: 30 * DAY, d90: 90 * DAY } as const;
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
 
-export function createUptime(db: DatabaseSync, { retentionDays = 30, clock = Date.now }: UptimeOptions = {}) {
+export function createUptime(db: DatabaseSync, { retentionDays = 30, tlsMinDays = 7, clock = Date.now }: UptimeOptions = {}) {
   const iso = (t: number) => new Date(t).toISOString();
 
   const checkRow = (id: string) => {
@@ -187,6 +212,10 @@ export function createUptime(db: DatabaseSync, { retentionDays = 30, clock = Dat
     return r;
   };
   const stateRow = (id: string) => db.prepare("SELECT * FROM state WHERE check_id = ?").get(id) as unknown as StateRow | undefined;
+  const fromFile = (c: CheckRow) => {
+    if (c.source === "file") throw new UptimeError(409, "conflict", "This check comes from the endpoints file (OPENASY_ENDPOINTS). Change or remove it there.");
+    return c;
+  };
 
   /** Downtime inside [start, end], from the outages that touch it. */
   function downtime(checkId: string, start: number, end: number): number {
@@ -253,6 +282,8 @@ export function createUptime(db: DatabaseSync, { retentionDays = 30, clock = Dat
       public: c.public === 1,
       paused: c.paused === 1,
       tags: JSON.parse(c.tags) as string[],
+      source: c.source,
+      server: c.server,
       status: status(c, st),
       uptime: { h24: uptime(c.id, WINDOWS.h24, st), d7: uptime(c.id, WINDOWS.d7, st), d30: uptime(c.id, WINDOWS.d30, st), d90: uptime(c.id, WINDOWS.d90, st) },
       createdAt: c.created_at,
@@ -323,7 +354,7 @@ export function createUptime(db: DatabaseSync, { retentionDays = 30, clock = Dat
     },
 
     updateCheck(id: string, body: Record<string, unknown>) {
-      const c = checkRow(id);
+      const c = fromFile(checkRow(id));
       const known = ["name", "group", "target", "expect", "intervalSeconds", "failuresToDown", "public", "tags"];
       const extra = Object.keys(body).filter((k) => !known.includes(k));
       if (extra.length || !Object.keys(body).length) throw bad(`Expected one or more of ${known.join(", ")}; the type cannot change.`);
@@ -348,7 +379,49 @@ export function createUptime(db: DatabaseSync, { retentionDays = 30, clock = Dat
     },
 
     deleteCheck(id: string) {
-      if (db.prepare("DELETE FROM checks WHERE id = ?").run(id).changes === 0) throw notFound("The check");
+      fromFile(checkRow(id));
+      db.prepare("DELETE FROM checks WHERE id = ?").run(id);
+    },
+
+    /**
+     * Makes the checks from the endpoints file match it (ADR 0052): adds, changes and removes them, and leaves checks
+     * added here alone. Every entry is checked first, so a bad one refuses the whole file and changes nothing. A
+     * check whose kind changes starts again, without the old one's history. Returns what to fix that did not stop it.
+     */
+    syncFile(endpoints: Endpoint[]): string[] {
+      const wanted = endpoints.map((e) => {
+        try {
+          return { e, id: fileId(e.name), target: parseTarget(e.kind, targetOf(e)), expect: JSON.stringify(parseExpect(e.kind, e.expect)) };
+        } catch (err) {
+          throw new Error(`${e.name}: ${(err as Error).message}`);
+        }
+      });
+      const warnings: string[] = [];
+      const kept: string[] = [];
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        for (const w of wanted) {
+          const same = db.prepare("SELECT id FROM checks WHERE name = ?").get(w.e.name) as { id: string } | undefined;
+          if (same && same.id !== w.id) {
+            warnings.push(`${w.e.name}: a check with this name was added in Uptime; rename one of them.`);
+            continue;
+          }
+          kept.push(w.id);
+          const current = db.prepare("SELECT type FROM checks WHERE id = ?").get(w.id) as { type: CheckType } | undefined;
+          if (current && current.type !== w.e.kind) db.prepare("DELETE FROM checks WHERE id = ?").run(w.id);
+          db.prepare(
+            `INSERT INTO checks (id, name, grp, type, target, expect, interval_s, failures_to_down, public, tags, created_at, source, server) VALUES (?, ?, ?, ?, ?, ?, ?, 2, ?, ?, ?, 'file', ?)
+             ON CONFLICT (id) DO UPDATE SET name = excluded.name, grp = excluded.grp, target = excluded.target, expect = excluded.expect, interval_s = excluded.interval_s, public = excluded.public, tags = excluded.tags, server = excluded.server`,
+          ).run(w.id, w.e.name, w.e.group, w.e.kind, w.target, w.expect, w.e.everySeconds ?? 300, w.e.public ? 1 : 0, JSON.stringify(w.e.tags), iso(clock()), w.e.server);
+        }
+        const gone = (db.prepare("SELECT id FROM checks WHERE source = 'file'").all() as Array<{ id: string }>).filter((r) => !kept.includes(r.id));
+        for (const r of gone) db.prepare("DELETE FROM checks WHERE id = ?").run(r.id);
+        db.exec("COMMIT");
+      } catch (err) {
+        db.exec("ROLLBACK");
+        throw err;
+      }
+      return warnings;
     },
 
     check: (id: string) => presentCheck(checkRow(id), true),
@@ -363,9 +436,10 @@ export function createUptime(db: DatabaseSync, { retentionDays = 30, clock = Dat
 
     /** What a runner needs: every check that is not paused. */
     runnable() {
-      return (db.prepare("SELECT * FROM checks WHERE paused = 0 ORDER BY name").all() as unknown as CheckRow[]).map((c) => ({
-        id: c.id, name: c.name, type: c.type, target: c.target, expect: JSON.parse(c.expect) as Expect, intervalSeconds: c.interval_s,
-      }));
+      return (db.prepare("SELECT * FROM checks WHERE paused = 0 ORDER BY name").all() as unknown as CheckRow[]).map((c) => {
+        const expect = JSON.parse(c.expect) as Expect;
+        return { id: c.id, name: c.name, type: c.type, target: c.target, expect: c.type === "tls" ? { minDays: tlsMinDays, ...expect } : expect, intervalSeconds: c.interval_s };
+      });
     },
 
     /** Takes what runners saw. Everything is checked first, so a bad result does not leave the rest half stored. */

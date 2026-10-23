@@ -95,7 +95,8 @@ export const daysUntil = (validTo, now = Date.now()) => Math.floor((Date.parse(v
 export function runTls(check, { timeoutMs = TIMEOUT_MS, now = Date.now } = {}) {
   const started = performance.now();
   const [host, port = "443"] = check.target.split(":");
-  const minDays = check.expect?.minDays ?? 14;
+  // Uptime sends the days with every TLS check (OPENASY_CERT_WARN_DAYS); 7 is its default critical threshold.
+  const minDays = check.expect?.minDays ?? 7;
   return new Promise((resolve) => {
     // The certificate is read even when it is not trusted, so the answer can say which problem it is. SNI names a
     // host, never an address: Node refuses an IP as the server name.

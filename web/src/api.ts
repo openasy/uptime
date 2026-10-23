@@ -29,6 +29,10 @@ export interface Check {
   public: boolean;
   paused: boolean;
   tags: string[];
+  /** file: from the endpoints file (OPENASY_ENDPOINTS); changed there, not here. */
+  source: "ui" | "file";
+  /** The server it runs on, by its name in the hosts file. */
+  server: string | null;
   status: { state: State; stale: boolean; since: string | null; lastResultAt: string | null; failures: number };
   uptime: { h24: number | null; d7: number | null; d30: number | null; d90: number | null };
   latency: { p50: number; p95: number; p99: number; samples: number } | null;
@@ -61,6 +65,16 @@ export interface Summary {
   stale: number;
   paused: number;
   openOutages: number;
+  endpointsFile: EndpointsFile | null;
+}
+
+/** The endpoints file (ADR 0052): a file that cannot be applied leaves the checks from its last good version. */
+export interface EndpointsFile {
+  path: string;
+  appliedAt: string | null;
+  entries: number;
+  error: string | null;
+  warnings: string[];
 }
 
 export class Unauthorized extends Error {}

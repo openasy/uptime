@@ -22,10 +22,33 @@ CI cron / any machine: node uptime-runner.mjs ──GET /api/v1/checks/runnable�
 | `http` | a web address | the status is below 400 (or the one you set), and the page has your text if you set one |
 | `tcp` | `host:port` | a connection opens |
 | `dns` | a host name | it resolves, to your record among the answers if you set one (A, AAAA, CNAME, TXT) |
-| `tls` | a host name, with `:port` if not 443 | the certificate is trusted and has at least 14 days left (or the days you set) |
+| `tls` | a host name, with `:port` if not 443 | the certificate is trusted and is not yet critical: 7 days left by default, from `OPENASY_CERT_WARN_DAYS` (or the days you set) |
 
 Each check has an **interval** (300 seconds by default), how often a runner is expected to run it, and the number of
 **failures in a row** before it is down (2 by default).
+
+### From a file
+
+Checks can also come from a file the install keeps, the same file Certificates reads (ADR 0052). Mount it and set
+`OPENASY_ENDPOINTS`; Uptime reads it at start and again within a minute of a change.
+
+```yaml
+endpoints:
+  - name: Website
+    url: https://www.example.com      # https:// or http:// is http, tcp://host:port, dns://name, tls://host:port
+    group: Public
+    server: web-1                     # the server it runs on, by its name in the hosts file
+    public: true                      # on the status page
+    every: 1m                         # 30s to 24h; 5m by default
+    expect: { status: 200, text: Welcome }
+  - name: Mail
+    url: tls://mail.example.com:465
+```
+
+A check from the file shows **From file** and is changed there: the API answers 409 to a change or delete, while
+pause and resume still work. Checks added in the UI stay as they are. An entry removed from the file removes its
+check and its results; a renamed entry is a new check. A file with a mistake is not applied at all: the checks from
+its last good version stay, and the Checks page and the log say what to fix.
 
 ## State and outages
 
@@ -99,6 +122,8 @@ are on http://localhost:8080, the API reference at http://localhost:8080/api/doc
 | `UPTIME_RETENTION_DAYS` | `30` | Results older than this are deleted. Ended outages are kept for 400 days |
 | `UPTIME_METRICS_PORT` | | Serve `/metrics` on this port only (ADR 0026) |
 | `UPTIME_HEADLESS` | `false` | `true` serves only the API |
+| `OPENASY_ENDPOINTS` | | A YAML file of endpoints to check, shared with Certificates; see [From a file](#from-a-file) |
+| `OPENASY_CERT_WARN_DAYS` | `30,14,7,1` | Days before a certificate ends that Certificates warns at. A TLS check fails at the critical one, 7 or the largest if less. Give both products the same value |
 | `UPTIME_PASSWORD_SIGN_IN`, `OPENASY_OIDC_*` | | Sign-in, as in every OpenAsy product ([@openasy/auth](https://github.com/openasy/auth)) |
 
 `/metrics` has `openasy_uptime_check_up{check}` (absent while a check's state is unknown) and
