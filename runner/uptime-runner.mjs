@@ -97,8 +97,9 @@ export function runTls(check, { timeoutMs = TIMEOUT_MS, now = Date.now } = {}) {
   const [host, port = "443"] = check.target.split(":");
   const minDays = check.expect?.minDays ?? 14;
   return new Promise((resolve) => {
-    // The certificate is read even when it is not trusted, so the answer can say which problem it is.
-    const socket = tls.connect({ host, port: Number(port), servername: host, rejectUnauthorized: false, timeout: timeoutMs });
+    // The certificate is read even when it is not trusted, so the answer can say which problem it is. SNI names a
+    // host, never an address: Node refuses an IP as the server name.
+    const socket = tls.connect({ host, port: Number(port), servername: net.isIP(host) ? undefined : host, rejectUnauthorized: false, timeout: timeoutMs });
     const done = (ok, detail) => {
       socket.destroy();
       resolve(result(ok, started, detail));
