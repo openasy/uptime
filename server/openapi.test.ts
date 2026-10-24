@@ -105,20 +105,9 @@ describe("responses match openapi.json", () => {
     await call("GET", "/status");
   });
 
-  it("checks: add, read, change, pause and every refusal", async () => {
-    check = (
-      (
-        await call(
-          "POST",
-          "/api/v1/checks",
-          admin({ name: "Shop", type: "http", target: "https://shop.example.com/health", public: true, group: "Customers", failuresToDown: 1 }),
-        )
-      ).body as { id: string }
-    ).id;
-    await call("POST", "/api/v1/checks", admin({ name: "Shop", type: "tcp", target: "db:5432" }));
-    await call("POST", "/api/v1/checks", admin({ name: "Bad", type: "ping", target: "x" }));
-    await call("POST", "/api/v1/checks", admin("nope"));
-    await call("POST", "/api/v1/checks", {});
+  it("checks: read, pause and every refusal", async () => {
+    // Checks come from the endpoints file only (ADR 0052).
+    check = (await app.addCheck("Shop", { public: true, group: "Customers", failuresToDown: 1 })).id;
     await call("GET", "/api/v1/checks", admin());
     await call("GET", "/api/v1/checks", admin(), "/api/v1/checks?group=Customers&state=unknown&limit=1");
     await call("GET", "/api/v1/checks", admin(), "/api/v1/checks?state=sleeping");
@@ -126,11 +115,6 @@ describe("responses match openapi.json", () => {
     await call("GET", "/api/v1/checks/{id}", admin(), `/api/v1/checks/${check}`);
     await call("GET", "/api/v1/checks/{id}", admin(), "/api/v1/checks/missing");
     await call("GET", "/api/v1/checks/{id}", {}, `/api/v1/checks/${check}`);
-    await call("PATCH", "/api/v1/checks/{id}", admin({ intervalSeconds: 60, tags: ["web"] }), `/api/v1/checks/${check}`);
-    await call("PATCH", "/api/v1/checks/{id}", admin({ type: "tcp" }), `/api/v1/checks/${check}`);
-    await call("PATCH", "/api/v1/checks/{id}", admin("nope"), `/api/v1/checks/${check}`);
-    await call("PATCH", "/api/v1/checks/{id}", admin({ public: true }), "/api/v1/checks/missing");
-    await call("PATCH", "/api/v1/checks/{id}", { method: "PATCH" }, `/api/v1/checks/${check}`);
     await call("POST", "/api/v1/checks/{id}/pause", admin(), `/api/v1/checks/${check}/pause`);
     await call("POST", "/api/v1/checks/{id}/pause", admin(), "/api/v1/checks/missing/pause");
     await call("POST", "/api/v1/checks/{id}/pause", { method: "POST" }, `/api/v1/checks/${check}/pause`);
@@ -177,7 +161,9 @@ describe("responses match openapi.json", () => {
 
   it("deletes a check", async () => {
     await call("DELETE", "/api/v1/checks/{id}", admin(), `/api/v1/checks/${check}`);
-    await call("DELETE", "/api/v1/checks/{id}", admin(), `/api/v1/checks/${check}`);
+    const legacy = app.addLegacy("Legacy");
+    await call("DELETE", "/api/v1/checks/{id}", admin(), `/api/v1/checks/${legacy}`);
+    await call("DELETE", "/api/v1/checks/{id}", admin(), `/api/v1/checks/${legacy}`);
     await call("DELETE", "/api/v1/checks/{id}", { method: "DELETE" }, "/api/v1/checks/x");
   });
 

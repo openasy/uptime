@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { renderStatusPage } from "./status.ts";
+import { fileId, parseEndpoints } from "./endpoints.ts";
 import { HOUR, MINUTE, startApp } from "./test-app.ts";
 
 let app: Awaited<ReturnType<typeof startApp>>;
@@ -9,15 +10,14 @@ beforeAll(async () => {
 afterAll(() => app.close());
 
 const T0 = () => app.clock.now;
-const patch = (id: string, body: unknown) => app.admin(`/api/v1/checks/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+const fromFile = (entries: Array<Record<string, unknown>>) => app.uptime.syncFile(parseEndpoints(JSON.stringify({ endpoints: entries })));
 
 describe("checks", () => {
-  it("adds a check with defaults, and refuses duplicates", async () => {
-    const res = await app.post("/api/v1/checks", { name: "Shop", type: "http", target: "https://shop.example.com/health" });
-    expect(res.status).toBe(201);
-    expect(await app.json(res)).toMatchObject({
+  it("come from the endpoints file, with defaults; no route adds or changes one", async () => {
+    expect(await app.addCheck("Shop")).toMatchObject({
       name: "Shop",
       type: "http",
+      source: "file",
       intervalSeconds: 300,
       failuresToDown: 2,
       public: false,
@@ -26,42 +26,47 @@ describe("checks", () => {
       status: { state: "unknown", stale: false },
       uptime: { h24: null, d90: null },
     });
-    expect((await app.post("/api/v1/checks", { name: "Shop", type: "tcp", target: "db:5432" })).status).toBe(409);
+    expect((await app.post("/api/v1/checks", { name: "Other", type: "tcp", target: "db:5432" })).status).toBe(404);
+    const id = fileId("Shop");
+    expect((await app.admin(`/api/v1/checks/${id}`, { method: "PATCH", body: JSON.stringify({ public: true }) })).status).toBe(404);
+    expect((await app.admin(`/api/v1/checks/${id}`, { method: "DELETE" })).status).toBe(409);
   });
 
-  it("checks each type's target and expectations", async () => {
-    const add = (body: Record<string, unknown>) => app.post("/api/v1/checks", { name: `c-${Math.random()}`, ...body });
-    expect((await add({ type: "tcp", target: "db.example.com:5432" })).status).toBe(201);
-    expect((await add({ type: "tcp", target: "db.example.com" })).status).toBe(422);
-    expect((await add({ type: "tcp", target: "db.example.com:99999" })).status).toBe(422);
-    expect((await add({ type: "dns", target: "www.example.com", expect: { recordType: "CNAME", record: "lb.example.com" } })).status).toBe(201);
-    expect((await add({ type: "dns", target: "www.example.com", expect: { recordType: "SRV" } })).status).toBe(422);
-    expect((await add({ type: "tls", target: "shop.example.com:8443", expect: { minDays: 30 } })).status).toBe(201);
-    expect((await add({ type: "tls", target: "shop.example.com", expect: { minDays: 999 } })).status).toBe(422);
-    expect((await add({ type: "http", target: "https://u:p@shop.example.com" })).status).toBe(422);
-    expect((await add({ type: "http", target: "ftp://shop.example.com" })).status).toBe(422);
-    expect((await add({ type: "http", target: "https://shop.example.com", expect: { status: 700 } })).status).toBe(422);
-    expect((await add({ type: "http", target: "https://shop.example.com", expect: { minDays: 3 } })).status).toBe(422);
-    expect((await add({ type: "ping", target: "x" })).status).toBe(422);
-    expect((await add({ type: "http", target: "https://shop.example.com", intervalSeconds: 5 })).status).toBe(422);
-    expect((await add({ type: "http", target: "https://shop.example.com", failuresToDown: 0 })).status).toBe(422);
-    expect((await add({ type: "http", target: "https://shop.example.com", tags: ["a b"] })).status).toBe(422);
-    expect((await add({ type: "http", target: "https://shop.example.com", surprise: 1 })).status).toBe(422);
-    expect((await app.post("/api/v1/checks", { name: "<b>", type: "tcp", target: "x:1" })).status).toBe(422);
+  it("refuses a file with a bad target or expectation, and changes nothing", async () => {
+    const before = await app.json(await app.admin("/api/v1/checks?limit=100"));
+    const bad = [
+      { url: "tcp://db.example.com" },
+      { url: "tcp://db.example.com:99999" },
+      { url: "dns://www.example.com", expect: { recordType: "SRV" } },
+      { url: "tls://shop.example.com", expect: { minDays: 999 } },
+      { url: "https://u:p@shop.example.com" },
+      { url: "ftp://shop.example.com" },
+      { url: "https://shop.example.com", expect: { status: 700 } },
+      { url: "https://shop.example.com", expect: { minDays: 3 } },
+      { url: "https://shop.example.com", every: 5 },
+      { url: "https://shop.example.com", failures: 0 },
+      { url: "https://shop.example.com", tags: ["a b"] },
+      { url: "https://shop.example.com", surprise: 1 },
+      { name: "<b>", url: "tcp://x:1" },
+    ];
+    for (const entry of bad) expect(() => fromFile([{ name: "Bad", ...entry }]), JSON.stringify(entry)).toThrow();
+    expect(await app.json(await app.admin("/api/v1/checks?limit=100"))).toEqual(before);
+    for (const url of ["tcp://db.example.com:5432", "tls://shop.example.com:8443"])
+      expect(() => parseEndpoints(JSON.stringify({ endpoints: [{ name: "Good", url }] }))).not.toThrow();
   });
 
-  it("changes a check, but not its type, and pauses and resumes it", async () => {
-    const c = await app.addCheck("Changeable");
-    expect(
-      await app.json(
-        await patch(c.id, { name: "Renamed", target: "https://shop.example.com/up", public: true, intervalSeconds: 60, tags: ["web"], group: "Shop" }),
-      ),
-    ).toMatchObject({ name: "Renamed", target: "https://shop.example.com/up", public: true, intervalSeconds: 60, tags: ["web"], group: "Shop" });
-    expect((await patch(c.id, { type: "tcp" })).status).toBe(422);
-    expect((await patch(c.id, {})).status).toBe(422);
-    expect((await patch(c.id, { name: "Shop" })).status).toBe(409);
-    expect((await patch(c.id, { target: "not a url" })).status).toBe(422);
-    expect((await patch("missing", { public: true })).status).toBe(404);
+  it("takes over a check added here before, with its history, when the file names it", async () => {
+    const legacy = app.addLegacy("Legacy", "https://legacy.example.com/");
+    await app.report(legacy, true);
+    expect(await app.json(await app.admin(`/api/v1/checks/${legacy}`))).toMatchObject({ source: "ui", status: { state: "up" } });
+    const c = await app.addCheck("Legacy", { target: "https://legacy.example.com/" });
+    expect(c).toMatchObject({ id: fileId("Legacy"), source: "file", status: { state: "up" } });
+    expect((await app.admin(`/api/v1/checks/${legacy}`)).status).toBe(404);
+  });
+
+  it("pauses and resumes a check, and follows the file when it changes", async () => {
+    const c = await app.addCheck("Changeable", { intervalSeconds: 60, failuresToDown: 3, tags: ["web"], group: "Shop" });
+    expect(c).toMatchObject({ public: false, intervalSeconds: 60, failuresToDown: 3, tags: ["web"], group: "Shop" });
     expect(await app.json(await app.admin(`/api/v1/checks/${c.id}/pause`, { method: "POST" }))).toMatchObject({ paused: true });
     expect(
       (await app.json(await app.admin("/api/v1/checks/runnable", { headers: { authorization: `Bearer test-ingest-token` } }))).checks.map(
@@ -70,8 +75,6 @@ describe("checks", () => {
     ).not.toContain(c.id);
     expect(await app.json(await app.admin(`/api/v1/checks/${c.id}/resume`, { method: "POST" }))).toMatchObject({ paused: false });
     expect((await app.admin("/api/v1/checks/missing/pause", { method: "POST" })).status).toBe(404);
-    expect((await app.admin(`/api/v1/checks/${c.id}`, { method: "DELETE" })).status).toBe(204);
-    expect((await app.admin(`/api/v1/checks/${c.id}`)).status).toBe(404);
   });
 
   it("lists checks by group and state, with paging", async () => {
@@ -79,7 +82,7 @@ describe("checks", () => {
     expect(all.checks).toHaveLength(2);
     expect(all.nextCursor).toBeDefined();
     expect((await app.json(await app.admin(`/api/v1/checks?limit=2&cursor=${all.nextCursor}`))).checks.length).toBeGreaterThan(0);
-    expect((await app.json(await app.admin("/api/v1/checks?state=up"))).checks).toEqual([]);
+    expect((await app.json(await app.admin("/api/v1/checks?state=down"))).checks).toEqual([]);
     expect((await app.admin("/api/v1/checks?state=sleeping")).status).toBe(422);
     expect((await app.admin("/api/v1/checks?limit=0")).status).toBe(422);
   });
@@ -256,7 +259,14 @@ describe("the public status page", () => {
 
   it("shows an outage, a stale check as no recent data, and maintenance", async () => {
     const [site] = (await app.json(await app.admin("/api/v1/checks?group=Customers"))).checks;
-    await patch(site.id, { failuresToDown: 1 });
+    await app.addCheck("Website", {
+      public: true,
+      group: "Customers",
+      tags: ["internal-tag"],
+      target: "https://www.example.com/",
+      expect: { text: "secret-marker" },
+      failuresToDown: 1,
+    });
     await app.report(site.id, false, app.clock.now + MINUTE);
     app.clock.now += 2 * MINUTE;
     let data = await app.json(await fetch(`${app.base}/api/v1/status/public`));
@@ -300,12 +310,10 @@ describe("access and metrics", () => {
   it("keeps checks to admins, pausing to editors, and the runner token to the runner", async () => {
     const anon = (path: string, init: RequestInit = {}) => fetch(app.base + path, init);
     expect((await anon("/api/v1/checks")).status).toBe(401);
-    expect((await anon("/api/v1/checks", { method: "POST", body: "{}" })).status).toBe(401);
     expect((await anon("/api/v1/checks/runnable")).status).toBe(401);
     expect((await anon("/api/v1/results", { method: "POST", body: "{}" })).status).toBe(401);
     expect((await anon("/api/v1/outages")).status).toBe(401);
     expect((await app.ingest("/api/v1/checks")).status).toBe(401);
-    expect((await app.ingest("/api/v1/checks", { method: "POST", body: "{}" })).status).toBe(401);
     expect((await app.ingest("/api/v1/summary")).status).toBe(401);
     const closed = await startApp({ version: "0.1.0", ingestToken: undefined, adminToken: undefined });
     expect((await fetch(`${closed.base}/api/v1/checks/runnable`)).status).toBe(503);

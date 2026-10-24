@@ -90,8 +90,8 @@ describe("checks from the file", () => {
 
   const checks = async () => (await app.json(await app.admin("/api/v1/checks?limit=100"))).checks as Array<Record<string, any>>;
 
-  it("become checks, managed by the file, beside the ones added here", async () => {
-    await app.addCheck("Added here");
+  it("become checks, managed by the file, beside the ones added here before", async () => {
+    app.addLegacy("Added here");
     expect(app.uptime.syncFile(parseEndpoints(FIXTURE))).toEqual([]);
     const list = await checks();
     expect(list.map((c) => `${c.name}:${c.type}:${c.target}:${c.source}`).sort()).toEqual([
@@ -115,10 +115,10 @@ describe("checks from the file", () => {
 
   it("are changed in the file only, but can be paused", async () => {
     const id = fileId("Website");
-    const refused = await app.admin(`/api/v1/checks/${id}`, { method: "PATCH", body: JSON.stringify({ public: false }) });
+    expect((await app.admin(`/api/v1/checks/${id}`, { method: "PATCH", body: JSON.stringify({ public: false }) })).status).toBe(404);
+    const refused = await app.admin(`/api/v1/checks/${id}`, { method: "DELETE" });
     expect(refused.status).toBe(409);
     expect((await app.json(refused)).detail).toMatch(/endpoints file/);
-    expect((await app.admin(`/api/v1/checks/${id}`, { method: "DELETE" })).status).toBe(409);
     expect((await app.admin(`/api/v1/checks/${id}/pause`, { method: "POST" })).status).toBe(200);
     expect((await app.admin(`/api/v1/checks/${id}/resume`, { method: "POST" })).status).toBe(200);
   });
@@ -143,16 +143,14 @@ describe("checks from the file", () => {
     expect(list.some((c) => c.name === "Added here" && c.source === "ui")).toBe(true);
   });
 
-  it("refuse a whole file with a bad entry, and warn about a name taken here", async () => {
+  it("refuse a whole file with a bad entry, and take over a check added here before by its name", async () => {
     const before = await checks();
     expect(() => app.uptime.syncFile(parseEndpoints("endpoints:\n  - { name: Website, url: https://www.example.com, expect: { minDays: 3 } }\n"))).toThrow(
       /Website: expect.minDays does not apply to a http check/,
     );
     expect(await checks()).toEqual(before);
-    expect(app.uptime.syncFile(parseEndpoints("endpoints:\n  - { name: Added here, url: https://x.example.com }\n"))).toEqual([
-      "Added here: a check with this name was added in Uptime; rename one of them.",
-    ]);
-    expect((await checks()).filter((c) => c.source === "file")).toEqual([]);
+    expect(app.uptime.syncFile(parseEndpoints("endpoints:\n  - { name: Added here, url: https://x.example.com }\n"))).toEqual([]);
+    expect((await checks()).map((c) => `${c.name}:${c.source}:${c.target}`)).toEqual(["Added here:file:https://x.example.com/"]);
   });
 });
 
@@ -166,8 +164,8 @@ describe("certificate thresholds shared with Certificates", () => {
 
     const app = await startApp({ version: "0.1.0" });
     try {
-      await app.post("/api/v1/checks", { name: "Shop TLS", type: "tls", target: "shop.example.com" });
-      await app.post("/api/v1/checks", { name: "Bank TLS", type: "tls", target: "bank.example.com", expect: { minDays: 30 } });
+      await app.addCheck("Shop TLS", { type: "tls", target: "shop.example.com" });
+      await app.addCheck("Bank TLS", { type: "tls", target: "bank.example.com", expect: { minDays: 30 } });
       const runnable = (await app.json(await app.ingest("/api/v1/checks/runnable"))).checks as Array<{ name: string; expect: { minDays?: number } }>;
       expect(Object.fromEntries(runnable.map((c) => [c.name, c.expect.minDays]))).toEqual({ "Bank TLS": 30, "Shop TLS": 7 });
     } finally {

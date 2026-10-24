@@ -16,10 +16,7 @@ import {
   Panel,
   PRODUCT_IDS,
   SegmentedControl,
-  SelectField,
   StatusBadge,
-  Switch,
-  TextField,
   TimeSeriesChart,
   usePath,
   type Column,
@@ -29,22 +26,10 @@ import {
 } from "@openasy/ui";
 import { AccountSettings, AuthGate, MembersSettings, SignInSettings, TokensSettings, useAuth, useInstallBrand } from "@openasy/auth/react";
 import colophon from "virtual:openasy-colophon";
-import { Activity, ExternalLink, KeyRound, LogIn, LogOut, Plus, Settings2, Trash2, TriangleAlert, UserRound, Users } from "lucide-react";
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
-import {
-  api,
-  MfaSetupRequired,
-  Unauthorized,
-  type Check,
-  type CheckType,
-  type Expect,
-  type Outage,
-  type ProductLink,
-  type Result,
-  type State,
-  type Summary,
-} from "./api.ts";
-import { useT, type T } from "./i18n.ts";
+import { Activity, ExternalLink, KeyRound, LogIn, LogOut, Settings2, Trash2, TriangleAlert, UserRound, Users } from "lucide-react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { api, MfaSetupRequired, Unauthorized, type Check, type Outage, type ProductLink, type Result, type State, type Summary } from "./api.ts";
+import { useT } from "./i18n.ts";
 
 const PAGES = ["outages", "setup", "account", "members", "signin", "tokens", "about"] as const;
 type Route = { page: "checks" | (typeof PAGES)[number] } | { page: "check"; id: string };
@@ -106,19 +91,6 @@ function Code({ children }: { children: ReactNode }) {
   return <pre className="m-0 overflow-x-auto rounded-md bg-subtle px-2.5 py-2 font-mono text-xs text-fg">{children}</pre>;
 }
 
-const TYPES = (t: T): Array<{ value: CheckType; label: string }> => [
-  { value: "http", label: t("types.httpAWebAddressAnswers") },
-  { value: "tcp", label: t("types.tcpAPortAcceptsConnections") },
-  { value: "dns", label: t("types.dnsANameResolves") },
-  { value: "tls", label: t("types.tlsACertificateIsValid") },
-];
-const TARGET_HINT = (t: T): Record<CheckType, string> => ({
-  http: "A web address, such as https://shop.example.com/health.",
-  tcp: "host:port, such as db.example.com:5432.",
-  dns: t("targetHint.aHostNameSuchAs"),
-  tls: t("targetHint.aHostNameWithPort"),
-});
-
 /** What the check expects, in words, for the list. */
 function expectation(c: Pick<Check, "type" | "expect">): string {
   const e = c.expect;
@@ -131,156 +103,33 @@ function expectation(c: Pick<Check, "type" | "expect">): string {
 
 // ---------------------------------------------------------------- Checks
 
-function CheckDialog({ call, check, onClose, onSaved }: { call: Call; check?: Check; onClose: () => void; onSaved: (c: Check) => void }) {
-  const t = useT();
-  const [name, setName] = useState(check?.name ?? "");
-  const [group, setGroup] = useState(check?.group ?? "");
-  const [type, setType] = useState<CheckType>(check?.type ?? "http");
-  const [target, setTarget] = useState(check?.target ?? "");
-  const [status, setStatus] = useState(check?.expect.status !== undefined ? String(check.expect.status) : "");
-  const [text, setText] = useState(check?.expect.text ?? "");
-  const [recordType, setRecordType] = useState<string>(check?.expect.recordType ?? "");
-  const [record, setRecord] = useState(check?.expect.record ?? "");
-  const [minDays, setMinDays] = useState(check?.expect.minDays !== undefined ? String(check.expect.minDays) : "");
-  const [interval, setIntervalSeconds] = useState(String(check?.intervalSeconds ?? 300));
-  const [failures, setFailures] = useState(String(check?.failuresToDown ?? 2));
-  const [isPublic, setPublic] = useState(check?.public ?? false);
-  const [error, setError] = useState<string>();
+// What to write in the endpoints file (ADR 0052), shown where there is nothing yet.
+const EXAMPLE = `endpoints:
+  - name: Shop
+    url: https://shop.example.com/health
+    expect: { status: 200 }
+  - name: Database
+    url: tcp://db.example.com:5432`;
 
-  const save = async (e: FormEvent) => {
-    e.preventDefault();
-    const expect: Expect = {};
-    if (type === "http") {
-      if (status) expect.status = Number(status);
-      if (text) expect.text = text;
-    }
-    if (type === "dns" && recordType) {
-      expect.recordType = recordType as Expect["recordType"];
-      if (record) expect.record = record;
-    }
-    if (type === "tls" && minDays) expect.minDays = Number(minDays);
-    const fields = {
-      name,
-      ...(group.trim() && { group: group.trim() }),
-      target,
-      expect,
-      intervalSeconds: Number(interval),
-      failuresToDown: Number(failures),
-      public: isPublic,
-    };
-    try {
-      const saved = check
-        ? await call<Check>(`/api/v1/checks/${check.id}`, { method: "PATCH", body: JSON.stringify(fields) })
-        : await call<Check>("/api/v1/checks", { method: "POST", body: JSON.stringify({ type, ...fields }) });
-      onSaved(saved);
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  };
-  return (
-    <Dialog
-      open
-      onOpenChange={(o) => !o && onClose()}
-      title={check ? t("checkDialog.change", { name: check.name }) : t("checkDialog.addACheck")}
-      description={t("checkDialog.aRunnerRunsItFrom")}
-      onSubmit={save}
-      footer={
-        <>
-          <Button type="button" onClick={onClose}>
-            {t("checkDialog.cancel")}
-          </Button>
-          <Button type="submit" variant="primary" disabled={!name.trim() || !target.trim()}>
-            {check ? t("checkDialog.save") : t("checkDialog.addCheck")}
-          </Button>
-        </>
-      }
-    >
-      <div className="grid gap-2 sm:grid-cols-2">
-        <TextField label={t("checkDialog.name")} value={name} onChange={(e) => setName(e.target.value)} />
-        <TextField label={t("checkDialog.group")} value={group} onChange={(e) => setGroup(e.target.value)} hint={t("checkDialog.optionalSuchAsShop")} />
-      </div>
-      {!check && <SelectField label={t("checkDialog.type")} value={type} onChange={(e) => setType(e.target.value as CheckType)} options={TYPES(t)} />}
-      <TextField label={t("checkDialog.target")} value={target} onChange={(e) => setTarget(e.target.value)} hint={TARGET_HINT(t)[type]} mono />
-      {type === "http" && (
-        <div className="grid gap-2 sm:grid-cols-2">
-          <TextField
-            label={t("checkDialog.status")}
-            inputMode="numeric"
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
-            hint={t("checkDialog.emptyAnythingBelow400")}
-          />
-          <TextField label={t("checkDialog.textInThePage")} value={text} onChange={(e) => setText(e.target.value)} hint={t("checkDialog.optional")} />
-        </div>
-      )}
-      {type === "dns" && (
-        <div className="grid gap-2 sm:grid-cols-2">
-          <SelectField
-            label={t("checkDialog.record")}
-            value={recordType}
-            onChange={(e) => setRecordType(e.target.value)}
-            options={[
-              { value: "", label: t("checkDialog.anyAnswer") },
-              { value: "A", label: "A" },
-              { value: "AAAA", label: "AAAA" },
-              { value: "CNAME", label: "CNAME" },
-              { value: "TXT", label: "TXT" },
-            ]}
-          />
-          {recordType && (
-            <TextField
-              label={t("checkDialog.amongTheAnswers")}
-              value={record}
-              onChange={(e) => setRecord(e.target.value)}
-              hint={t("checkDialog.optionalSuchAs2030")}
-            />
-          )}
-        </div>
-      )}
-      {type === "tls" && (
-        <TextField
-          label={t("checkDialog.daysTheCertificateMustHave")}
-          inputMode="numeric"
-          value={minDays}
-          onChange={(e) => setMinDays(e.target.value)}
-          hint={t("checkDialog.empty14")}
-        />
-      )}
-      <div className="grid gap-2 sm:grid-cols-2">
-        <TextField
-          label={t("checkDialog.everySeconds")}
-          inputMode="numeric"
-          value={interval}
-          onChange={(e) => setIntervalSeconds(e.target.value)}
-          hint={t("checkDialog.staleAfterThreeOfThese")}
-        />
-        <TextField
-          label={t("checkDialog.downAfterThisManyFailures")}
-          inputMode="numeric"
-          value={failures}
-          onChange={(e) => setFailures(e.target.value)}
-          hint={t("checkDialog.oneFailureIsDegraded")}
-          error={error}
-        />
-      </div>
-      <Switch
-        checked={isPublic}
-        onCheckedChange={setPublic}
-        label={t("checkDialog.showOnThePublicStatus")}
-        description={t("checkDialog.byNameGroupAndState")}
-      />
-    </Dialog>
-  );
+/** The entry of the endpoints file for a check added here before the file was the way in. */
+function toEntry(c: Check): string {
+  const lines = [`  - name: ${c.name}`, `    url: ${c.type === "http" ? c.target : `${c.type}://${c.target}`}`];
+  if (c.group) lines.push(`    group: ${c.group}`);
+  if (c.intervalSeconds !== 300) lines.push(`    every: ${c.intervalSeconds}s`);
+  if (c.failuresToDown !== 2) lines.push(`    failures: ${c.failuresToDown}`);
+  if (c.public) lines.push("    public: true");
+  if (Object.keys(c.expect).length) lines.push(`    expect: ${JSON.stringify(c.expect)}`);
+  if (c.tags.length) lines.push(`    tags: [${c.tags.join(", ")}]`);
+  return lines.join("\n");
 }
+const toYaml = (checks: Check[]) => ["endpoints:", ...checks.map(toEntry)].join("\n");
 
-function ChecksPage({ call, summary, reload }: { call: Call; summary?: Summary; reload: () => void }) {
+function ChecksPage({ call, summary }: { call: Call; summary?: Summary; reload: () => void }) {
   const ago = useAgo();
   const msg = useT();
-  const { can } = useAuth();
   const [rows, setRows] = useState<Check[]>();
   const [states, setStates] = useState<string[]>([]);
   const [groups, setGroups] = useState<string[]>([]);
-  const [adding, setAdding] = useState(false);
   const load = useCallback(
     () =>
       void call<{ checks: Check[] }>("/api/v1/checks?limit=500").then(
@@ -350,11 +199,6 @@ function ChecksPage({ call, summary, reload }: { call: Call; summary?: Summary; 
             <Button icon={<ExternalLink />} onClick={() => window.open("/status", "_blank", "noopener")}>
               {msg("checksPage.statusPage")}
             </Button>
-            {can("admin") && (
-              <Button variant="primary" icon={<Plus />} onClick={() => setAdding(true)}>
-                {msg("checksPage.addCheck")}
-              </Button>
-            )}
           </span>
         }
       />
@@ -375,6 +219,14 @@ function ChecksPage({ call, summary, reload }: { call: Call; summary?: Summary; 
       {!!s?.endpointsFile?.warnings.length && (
         <Callout tone="warning" title={msg("checksPage.theEndpointsFileHasSomething")}>
           {s.endpointsFile.warnings.join(" ")}
+        </Callout>
+      )}
+      {all.some((c) => c.source === "ui") && (
+        <Callout tone="info" title={msg("checksPage.addedHereBefore", { count: all.filter((c) => c.source === "ui").length })}>
+          {msg("checksPage.copyTheseIntoTheEndpointsFile")}
+          <div className="mt-2">
+            <Code>{toYaml(all.filter((c) => c.source === "ui"))}</Code>
+          </div>
         </Callout>
       )}
       {s && s.stale > 0 && (
@@ -408,22 +260,14 @@ function ChecksPage({ call, summary, reload }: { call: Call; summary?: Summary; 
           minWidth={960}
           empty={
             <EmptyState title={msg("checksPage.noChecksYet")}>
-              {can("admin") ? msg("checksPage.addTheFirstCheckThen") : msg("checksPage.anAdminAddsTheChecks")}
+              {msg("checksPage.theyComeFromTheEndpointsFile")}
+              <div className="mt-3 text-left">
+                <Code>{EXAMPLE}</Code>
+              </div>
             </EmptyState>
           }
         />
       </Panel>
-      {adding && (
-        <CheckDialog
-          call={call}
-          onClose={() => setAdding(false)}
-          onSaved={(c) => {
-            setAdding(false);
-            reload();
-            navigate(`/checks/${c.id}`);
-          }}
-        />
-      )}
     </>
   );
 }
@@ -435,7 +279,6 @@ function CheckPage({ call, id, reload }: { call: Call; id: string; reload: () =>
   const [check, setCheck] = useState<Check | null>();
   const [results, setResults] = useState<Result[]>();
   const [outages, setOutages] = useState<Outage[]>();
-  const [editing, setEditing] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -545,7 +388,6 @@ function CheckPage({ call, id, reload }: { call: Call; id: string; reload: () =>
                   {check.paused ? msg("checkPage.resume") : msg("checkPage.pause")}
                 </Button>
               )}
-              {can("admin") && check.source === "ui" && <Button onClick={() => setEditing(true)}>{msg("checkPage.change")}</Button>}
             </span>
           )
         }
@@ -564,6 +406,14 @@ function CheckPage({ call, id, reload }: { call: Call; id: string; reload: () =>
         </KpiGrid>
       )}
       {check?.source === "file" && <p className="m-0 text-sm text-fg-muted">{msg("checkPage.fromTheEndpointsFileChange")}</p>}
+      {check?.source === "ui" && (
+        <Callout tone="info" title={msg("checkPage.addedHereBefore")}>
+          {msg("checkPage.copyThisIntoTheEndpointsFile")}
+          <div className="mt-2">
+            <Code>{toYaml([check])}</Code>
+          </div>
+        </Callout>
+      )}
       {check?.paused && <p className="m-0 text-sm text-fg-muted">{msg("checkPage.pausedRunnersSkipItAnd")}</p>}
       {check?.status.stale && !check.paused && <p className="m-0 text-sm text-fg-muted">{msg("checkPage.noResultForThreeIntervals")}</p>}
       {error && <p className="m-0 text-sm text-danger">{error}</p>}
@@ -613,18 +463,6 @@ function CheckPage({ call, id, reload }: { call: Call; id: string; reload: () =>
             {msg("checkPage.deleteCheck")}
           </Button>
         </div>
-      )}
-      {editing && check && (
-        <CheckDialog
-          call={call}
-          check={check}
-          onClose={() => setEditing(false)}
-          onSaved={() => {
-            setEditing(false);
-            load();
-            reload();
-          }}
-        />
       )}
       {check && (
         <Dialog

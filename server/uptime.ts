@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import { fileId, type Endpoint } from "./endpoints.ts";
 
@@ -18,9 +17,7 @@ export class UptimeError extends Error {
 export type CheckType = "http" | "tcp" | "dns" | "tls";
 export type State = "up" | "degraded" | "down" | "unknown";
 
-const TYPES: CheckType[] = ["http", "tcp", "dns", "tls"];
 const RECORD_TYPES = ["A", "AAAA", "CNAME", "TXT"];
-const NAME = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
 const DAY = 86_400_000;
 /** A result that is older than this, or further ahead than SKEW, is refused: a runner with a wrong clock would rewrite history. */
 const MAX_AGE = DAY;
@@ -129,18 +126,6 @@ const int = (v: unknown, name: string, min: number, max: number) => {
   if (!Number.isInteger(v) || (v as number) < min || (v as number) > max) throw bad(`${name} must be a whole number from ${min} to ${max}.`);
   return v as number;
 };
-
-function parseTags(v: unknown): string[] {
-  if (!Array.isArray(v) || v.length > 8 || v.some((t) => typeof t !== "string" || !/^[A-Za-z0-9._:-]{1,32}$/.test(t)))
-    throw bad("tags is up to 8 short words of letters, digits and . _ : -.");
-  return [...new Set(v as string[])];
-}
-
-function parseGroup(v: unknown): string | null {
-  if (v === null || v === "") return null;
-  if (typeof v !== "string" || v.length > 64 || /[\x00-\x1f<>]/.test(v)) throw bad("group is a name of up to 64 characters.");
-  return v.trim();
-}
 
 interface CheckRow {
   id: string;
@@ -327,70 +312,7 @@ export function createUptime(db: DatabaseSync, { retentionDays = 30, tlsMinDays 
     }
   }
 
-  const fields = (body: Record<string, unknown>, type: CheckType | undefined) => {
-    const out: Record<string, SQLInputValue> = {};
-    if (body.group !== undefined) out.grp = parseGroup(body.group);
-    if (body.intervalSeconds !== undefined) out.interval_s = int(body.intervalSeconds, "intervalSeconds", 30, 86_400);
-    if (body.failuresToDown !== undefined) out.failures_to_down = int(body.failuresToDown, "failuresToDown", 1, 10);
-    if (body.public !== undefined) {
-      if (typeof body.public !== "boolean") throw bad("public must be true or false.");
-      out.public = body.public ? 1 : 0;
-    }
-    if (body.tags !== undefined) out.tags = JSON.stringify(parseTags(body.tags));
-    void type;
-    return out;
-  };
-
   return {
-    createCheck(body: Record<string, unknown>) {
-      const known = ["name", "group", "type", "target", "expect", "intervalSeconds", "failuresToDown", "public", "tags"];
-      const extra = Object.keys(body).filter((k) => !known.includes(k));
-      if (extra.length) throw bad(`Unknown fields: ${extra.join(", ")}.`);
-      if (typeof body.name !== "string" || !NAME.test(body.name.trim())) throw bad("name is required: up to 64 letters, digits, spaces and . _ -.");
-      if (typeof body.type !== "string" || !TYPES.includes(body.type as CheckType)) throw bad(`type is one of ${TYPES.join(", ")}.`);
-      const type = body.type as CheckType;
-      const name = body.name.trim();
-      if (db.prepare("SELECT 1 FROM checks WHERE name = ?").get(name)) throw new UptimeError(409, "conflict", "A check with this name exists.");
-      const f = fields(body, type);
-      const id = randomUUID();
-      db.prepare(
-        "INSERT INTO checks (id, name, grp, type, target, expect, interval_s, failures_to_down, public, tags, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      ).run(
-        id,
-        name,
-        (f.grp as string | null | undefined) ?? null,
-        type,
-        parseTarget(type, body.target),
-        JSON.stringify(parseExpect(type, body.expect)),
-        (f.interval_s as number | undefined) ?? 300,
-        (f.failures_to_down as number | undefined) ?? 2,
-        (f.public as number | undefined) ?? 0,
-        (f.tags as string | undefined) ?? "[]",
-        iso(clock()),
-      );
-      return presentCheck(checkRow(id), true);
-    },
-
-    updateCheck(id: string, body: Record<string, unknown>) {
-      const c = fromFile(checkRow(id));
-      const known = ["name", "group", "target", "expect", "intervalSeconds", "failuresToDown", "public", "tags"];
-      const extra = Object.keys(body).filter((k) => !known.includes(k));
-      if (extra.length || !Object.keys(body).length) throw bad(`Expected one or more of ${known.join(", ")}; the type cannot change.`);
-      const f = fields(body, c.type);
-      if (body.name !== undefined) {
-        if (typeof body.name !== "string" || !NAME.test(body.name.trim())) throw bad("name is up to 64 letters, digits, spaces and . _ -.");
-        const name = body.name.trim();
-        if (name !== c.name && db.prepare("SELECT 1 FROM checks WHERE name = ?").get(name))
-          throw new UptimeError(409, "conflict", "A check with this name exists.");
-        f.name = name;
-      }
-      if (body.target !== undefined) f.target = parseTarget(c.type, body.target);
-      if (body.expect !== undefined) f.expect = JSON.stringify(parseExpect(c.type, body.expect));
-      const keys = Object.keys(f);
-      db.prepare(`UPDATE checks SET ${keys.map((k) => `${k} = ?`).join(", ")} WHERE id = ?`).run(...keys.map((k) => f[k]!), id);
-      return presentCheck(checkRow(id), true);
-    },
-
     setPaused(id: string, paused: boolean) {
       checkRow(id);
       db.prepare("UPDATE checks SET paused = ? WHERE id = ?").run(paused ? 1 : 0, id);
@@ -403,8 +325,8 @@ export function createUptime(db: DatabaseSync, { retentionDays = 30, tlsMinDays 
     },
 
     /**
-     * Makes the checks from the endpoints file match it (ADR 0052): adds, changes and removes them, and leaves checks
-     * added here alone. Every entry is checked first, so a bad one refuses the whole file and changes nothing. A
+     * Makes the checks match the endpoints file (ADR 0052): adds, changes and removes them. A check added here before,
+     * with the name of an entry, becomes the file's and keeps its results and outages. Every entry is checked first, so a bad one refuses the whole file and changes nothing. A
      * check whose kind changes starts again, without the old one's history. Returns what to fix that did not stop it.
      */
     syncFile(endpoints: Endpoint[]): string[] {
@@ -418,19 +340,26 @@ export function createUptime(db: DatabaseSync, { retentionDays = 30, tlsMinDays 
       const warnings: string[] = [];
       const kept: string[] = [];
       db.exec("BEGIN IMMEDIATE");
+      // A check taken over changes its id, and its results with it, before the keys are checked at the end.
+      db.exec("PRAGMA defer_foreign_keys = ON");
       try {
         for (const w of wanted) {
-          const same = db.prepare("SELECT id FROM checks WHERE name = ?").get(w.e.name) as { id: string } | undefined;
+          const same = db.prepare("SELECT id, source FROM checks WHERE name = ?").get(w.e.name) as { id: string; source: string } | undefined;
           if (same && same.id !== w.id) {
-            warnings.push(`${w.e.name}: a check with this name was added in Uptime; rename one of them.`);
-            continue;
+            if (same.source !== "ui") continue;
+            for (const table of ["checks", "results", "state", "outages"])
+              db.prepare(`UPDATE ${table} SET ${table === "checks" ? "id" : "check_id"} = ? WHERE ${table === "checks" ? "id" : "check_id"} = ?`).run(
+                w.id,
+                same.id,
+              );
+            db.prepare("UPDATE checks SET source = 'file' WHERE id = ?").run(w.id);
           }
           kept.push(w.id);
           const current = db.prepare("SELECT type FROM checks WHERE id = ?").get(w.id) as { type: CheckType } | undefined;
           if (current && current.type !== w.e.kind) db.prepare("DELETE FROM checks WHERE id = ?").run(w.id);
           db.prepare(
-            `INSERT INTO checks (id, name, grp, type, target, expect, interval_s, failures_to_down, public, tags, created_at, source, server) VALUES (?, ?, ?, ?, ?, ?, ?, 2, ?, ?, ?, 'file', ?)
-             ON CONFLICT (id) DO UPDATE SET name = excluded.name, grp = excluded.grp, target = excluded.target, expect = excluded.expect, interval_s = excluded.interval_s, public = excluded.public, tags = excluded.tags, server = excluded.server`,
+            `INSERT INTO checks (id, name, grp, type, target, expect, interval_s, failures_to_down, public, tags, created_at, source, server) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'file', ?)
+             ON CONFLICT (id) DO UPDATE SET name = excluded.name, grp = excluded.grp, target = excluded.target, expect = excluded.expect, interval_s = excluded.interval_s, failures_to_down = excluded.failures_to_down, public = excluded.public, tags = excluded.tags, server = excluded.server`,
           ).run(
             w.id,
             w.e.name,
@@ -439,6 +368,7 @@ export function createUptime(db: DatabaseSync, { retentionDays = 30, tlsMinDays 
             w.target,
             w.expect,
             w.e.everySeconds ?? 300,
+            w.e.failures ?? 2,
             w.e.public ? 1 : 0,
             JSON.stringify(w.e.tags),
             iso(clock()),

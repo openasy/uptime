@@ -24,12 +24,13 @@ CI cron / any machine: node uptime-runner.mjs ──GET /api/v1/checks/runnable�
 | `dns` | a host name | it resolves, to your record among the answers if you set one (A, AAAA, CNAME, TXT) |
 | `tls` | a host name, with `:port` if not 443 | the certificate is trusted and is not yet critical: 7 days left by default, from `OPENASY_CERT_WARN_DAYS` (or the days you set) |
 
-Each check has an **interval** (300 seconds by default), how often a runner is expected to run it, and the number of
-**failures in a row** before it is down (2 by default).
+Each check has an **interval** (`every`, 300 seconds by default), how often a runner is expected to run it, and the
+number of **failures in a row** before it is down (`failures`, 2 by default).
 
 ### From a file
 
-Checks can also come from a file the install keeps, the same file Certificates reads (ADR 0052). Mount it and set
+Checks come from a file the install keeps, the same file Certificates reads, and from nowhere else (ADR 0052): there is
+no form and no API route that adds or changes one. Mount it and set
 `OPENASY_ENDPOINTS`; Uptime reads it at start and again within a minute of a change.
 
 ```yaml
@@ -40,13 +41,15 @@ endpoints:
     server: web-1                     # the server it runs on, by its name in the hosts file
     public: true                      # on the status page
     every: 1m                         # 30s to 24h; 5m by default
+    failures: 3                       # in a row before it is down; 2 by default
     expect: { status: 200, text: Welcome }
   - name: Mail
     url: tls://mail.example.com:465
 ```
 
-A check from the file shows **From file** and is changed there: the API answers 409 to a change or delete, while
-pause and resume still work. Checks added in the UI stay as they are. An entry removed from the file removes its
+A check is changed and removed in the file: the API answers 409 to a delete, while pause and resume still work.
+Checks added in the UI before 0.5.0 keep running, and the Checks page shows the lines to copy into the file; once an
+entry has the same name, it takes the check over with its results and outages. An entry removed from the file removes its
 check and its results; a renamed entry is a new check. A file with a mistake is not applied at all: the checks from
 its last good version stay, and the Checks page and the log say what to fix.
 
@@ -133,7 +136,7 @@ The container runs as non-root with a read-only root filesystem, no capabilities
 
 ## Roles
 
-Viewers see everything; editors also pause and resume checks; admins also add, change and delete checks, and manage
+Viewers see everything; editors also pause and resume checks; admins also delete checks added before the file, and manage
 members and API tokens (ADR 0003).
 
 ## Develop

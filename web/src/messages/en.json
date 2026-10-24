@@ -1,33 +1,4 @@
 {
-  "checkDialog": {
-    "change": "Change {{name}}",
-    "addACheck": "Add a check",
-    "aRunnerRunsItFrom": "A runner runs it from where it runs, and sends what it saw. Uptime itself probes nothing.",
-    "cancel": "Cancel",
-    "save": "Save",
-    "addCheck": "Add check",
-    "name": "Name",
-    "group": "Group",
-    "optionalSuchAsShop": "Optional, such as Shop.",
-    "type": "Type",
-    "target": "Target",
-    "status": "Status",
-    "emptyAnythingBelow400": "Empty: anything below 400.",
-    "textInThePage": "Text in the page",
-    "optional": "Optional.",
-    "record": "Record",
-    "anyAnswer": "Any answer",
-    "amongTheAnswers": "Among the answers",
-    "optionalSuchAs2030": "Optional, such as 203.0.113.10.",
-    "daysTheCertificateMustHave": "Days the certificate must have left",
-    "empty14": "Empty: 14.",
-    "everySeconds": "Every (seconds)",
-    "staleAfterThreeOfThese": "Stale after three of these without a result.",
-    "downAfterThisManyFailures": "Down after this many failures",
-    "oneFailureIsDegraded": "One failure is degraded.",
-    "showOnThePublicStatus": "Show on the public status page",
-    "byNameGroupAndState": "By name, group and state; never the target."
-  },
   "checksPage": {
     "state": "State",
     "check": "Check",
@@ -41,7 +12,6 @@
     "lastResult": "Last result",
     "checks": "Checks",
     "statusPage": "Status page",
-    "addCheck": "Add check",
     "down": "Down",
     "degraded": "Degraded",
     "stale": "Stale",
@@ -54,8 +24,10 @@
     "setup": "Setup",
     "noGroup": "No group",
     "noChecksYet": "No checks yet",
-    "addTheFirstCheckThen": "Add the first check, then start a runner. See Setup.",
-    "anAdminAddsTheChecks": "An admin adds the checks."
+    "theyComeFromTheEndpointsFile": "Checks come from the endpoints file the install keeps, the one Certificates reads too: set OPENASY_ENDPOINTS to it. Every entry is a check, such as:",
+    "addedHereBefore_one": "{{count}} check was added here before the file",
+    "addedHereBefore_other": "{{count}} checks were added here before the file",
+    "copyTheseIntoTheEndpointsFile": "They keep running. Copy these lines into the endpoints file: once an entry has the same name, it takes the check over with its results and outages."
   },
   "checkPage": {
     "checkNotFound": "Check not found",
@@ -76,7 +48,6 @@
     "everyDownAfter": "{{value}} {{target}}{{value2}} · {{expectation}} · every {{every}}, down after {{plural}}{{value3}}",
     "resume": "Resume",
     "pause": "Pause",
-    "change": "Change",
     "n24Hours": "24 hours",
     "n7Days": "7 days",
     "n30Days": "30 days",
@@ -99,7 +70,9 @@
     "delete": "Delete {{name}}?",
     "itsResultsAndOutagesAre": "Its results and outages are deleted with it, and it leaves the status page.",
     "cancel": "Cancel",
-    "delete2": "Delete"
+    "delete2": "Delete",
+    "addedHereBefore": "Added here before the file",
+    "copyThisIntoTheEndpointsFile": "It keeps running. Copy this into the endpoints file: once the entry is there, it takes the check over with its results and outages."
   },
   "outagesPage": {
     "check": "Check",
@@ -142,16 +115,6 @@
     "signIn": "Sign-in",
     "apiTokens": "API tokens",
     "account": "Account"
-  },
-  "types": {
-    "httpAWebAddressAnswers": "HTTP: a web address answers",
-    "tcpAPortAcceptsConnections": "TCP: a port accepts connections",
-    "dnsANameResolves": "DNS: a name resolves",
-    "tlsACertificateIsValid": "TLS: a certificate is valid and not ending soon"
-  },
-  "targetHint": {
-    "aHostNameSuchAs": "A host name, such as example.com.",
-    "aHostNameWithPort": "A host name, with :port if not 443."
   },
   "plurals": {
     "check_one": "{{count}} check",

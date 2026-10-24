@@ -1,6 +1,7 @@
 // The install's endpoints from a file, the same file for every product that watches endpoints (ADR 0052). Each product
-// reads what it needs: Uptime checks every entry, Certificates reads the certificate of https:// and tls:// ones. This
-// file is the same in each of those products; keep the copies in step (test/endpoints.yaml is shared too).
+// reads what it needs: Uptime checks every entry, Certificates reads the certificate of https:// and tls:// ones, and
+// DAST scans the ones with a dast block. This file is the same in each of those products; keep the copies in step
+// (test/endpoints.yaml is shared too).
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { parse } from "yaml";
@@ -24,11 +25,15 @@ export interface Endpoint {
   /** Left to each product to check: Uptime knows which keys a kind takes. */
   expect: Record<string, unknown>;
   tags: string[];
+  /** How many failed checks in a row make it down, 1 to 10; Uptime's. */
+  failures: number | null;
+  /** What DAST scans it with, when it is a DAST target; left to DAST to check. */
+  dast: Record<string, unknown> | null;
 }
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
 const SERVER = /^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/;
-const KEYS = ["name", "url", "group", "server", "public", "every", "expect", "tags"];
+const KEYS = ["name", "url", "group", "server", "public", "every", "expect", "tags", "failures", "dast"];
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 
 /** "90s", "5m", "1h" or a number of seconds. */
@@ -87,6 +92,9 @@ export function parseEndpoints(text: string): Endpoint[] {
       throw new Error(`${where}.server is a name from the hosts file: letters, digits, dots, dashes and underscores, up to 63.`);
     if (e.public !== undefined && typeof e.public !== "boolean") throw new Error(`${where}.public is true or false.`);
     if (e.expect !== undefined && !isObj(e.expect)) throw new Error(`${where}.expect is a map, such as { status: 200 }.`);
+    if (e.failures !== undefined && (!Number.isInteger(e.failures) || (e.failures as number) < 1 || (e.failures as number) > 10))
+      throw new Error(`${where}.failures is a whole number from 1 to 10.`);
+    if (e.dast !== undefined && !isObj(e.dast)) throw new Error(`${where}.dast is a map, such as { schedule: weekly }.`);
     if (
       e.tags !== undefined &&
       (!Array.isArray(e.tags) || e.tags.length > 8 || e.tags.some((t) => typeof t !== "string" || !/^[A-Za-z0-9._:-]{1,32}$/.test(t)))
@@ -102,6 +110,8 @@ export function parseEndpoints(text: string): Endpoint[] {
       everySeconds: e.every === undefined ? null : seconds(e.every, where),
       expect: (e.expect as Record<string, unknown> | undefined) ?? {},
       tags: [...new Set((e.tags as string[] | undefined) ?? [])],
+      failures: (e.failures as number | undefined) ?? null,
+      dast: (e.dast as Record<string, unknown> | undefined) ?? null,
     };
   });
 }

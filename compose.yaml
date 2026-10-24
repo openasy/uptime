@@ -6,7 +6,7 @@
 #   docker compose logs uptime | grep 'no owner yet'   # the one-time link that creates the owner account
 services:
   uptime:
-    image: ghcr.io/openasy/uptime:0.4.0
+    image: ghcr.io/openasy/uptime:0.5.0
     restart: unless-stopped
     read_only: true
     cap_drop: [ALL]
@@ -16,7 +16,7 @@ services:
       - "127.0.0.1:8080:8080" # UI and API; put a TLS proxy in front to reach it from elsewhere
     volumes:
       - uptime-data:/data # SQLite database: checks, results and outages
-      # - ./inventory:/config/inventory:ro   # the install's endpoints, shared with Certificates
+      # - ./inventory:/config/inventory:ro   # the install's endpoints, shared with Certificates and DAST
     secrets:
       - openasy-kek # mounted at /run/secrets/openasy-kek
     environment:
@@ -26,7 +26,7 @@ services:
       UPTIME_INGEST_TOKEN: ${UPTIME_INGEST_TOKEN:-}
       # The title of the public status page.
       # UPTIME_STATUS_TITLE: Example status
-      # Checks from the endpoints file, the same file Certificates reads (ADR 0052):
+      # Checks from the endpoints file, the same file Certificates and DAST read, and the only way to add one (ADR 0052):
       # OPENASY_ENDPOINTS: /config/inventory/endpoints.yaml
       # Days before a certificate ends that Certificates warns at; a TLS check fails at the critical one (7):
       # OPENASY_CERT_WARN_DAYS: 30,14,7,1

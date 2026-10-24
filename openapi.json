@@ -2,7 +2,7 @@
   "openapi": "3.1.1",
   "info": {
     "title": "OpenAsy Uptime API",
-    "version": "0.4.0",
+    "version": "0.5.0",
     "summary": "Checks, their state and outages, and a public status page. Runners run the checks; the server never probes anything.",
     "description": "Every screen of Uptime uses this API, and so can your scripts (ADR 0014). Within `/api/v1` changes are additive only; anything removed is deprecated first (ADR 0024). Errors use Problem Details (RFC 9457).\n\nChecks are defined here and run by a runner: the script at `/uptime-runner.mjs`, started from a CI cron or any machine, with `UPTIME_INGEST_TOKEN`. Everything else takes the session of a signed-in person or an API token, and each operation names the role it needs (`x-openasy-role`: viewer, editor, admin; ADR 0003). `/status` and `/api/v1/status/public` need no sign-in and show only checks marked public.\n\nSign-in, members and API tokens are under `/api/v1/auth`, provided by [@openasy/auth](https://github.com/openasy/auth#routes).",
     "license": {
@@ -192,7 +192,7 @@
             "adminToken": []
           }
         ],
-        "description": "Needs the viewer role.",
+        "description": "Needs the viewer role. The checks come from the endpoints file (OPENASY_ENDPOINTS, ADR 0052); no route adds or changes one.",
         "parameters": [
           {
             "name": "group",
@@ -259,66 +259,6 @@
           }
         },
         "x-openasy-role": "viewer"
-      },
-      "post": {
-        "operationId": "createCheck",
-        "tags": [
-          "Checks"
-        ],
-        "summary": "Add a check",
-        "security": [
-          {
-            "session": []
-          },
-          {
-            "apiToken": []
-          },
-          {
-            "adminToken": []
-          }
-        ],
-        "description": "Needs the admin role.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NewCheck"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Created. Nothing runs it until a runner does.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Check"
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "401": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "403": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "422": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "503": {
-            "$ref": "#/components/responses/Problem"
-          }
-        },
-        "x-openasy-role": "admin"
       }
     },
     "/api/v1/checks/{id}": {
@@ -377,80 +317,6 @@
         },
         "x-openasy-role": "viewer"
       },
-      "patch": {
-        "operationId": "updateCheck",
-        "tags": [
-          "Checks"
-        ],
-        "summary": "Change a check",
-        "security": [
-          {
-            "session": []
-          },
-          {
-            "apiToken": []
-          },
-          {
-            "adminToken": []
-          }
-        ],
-        "description": "Needs the admin role.",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "description": "The check's id.",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateCheck"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The check.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Check"
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "401": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "403": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "404": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "422": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "503": {
-            "$ref": "#/components/responses/Problem"
-          }
-        },
-        "x-openasy-role": "admin"
-      },
       "delete": {
         "operationId": "deleteCheck",
         "tags": [
@@ -468,7 +334,7 @@
             "adminToken": []
           }
         ],
-        "description": "Deletes its results and outages.\n\nNeeds the admin role.",
+        "description": "Deletes a check added in Uptime before the endpoints file was the way in, with its results and outages. One from the file answers 409 and is removed in the file.\n\nNeeds the admin role.",
         "parameters": [
           {
             "name": "id",
@@ -1031,7 +897,7 @@
       "apiToken": {
         "type": "http",
         "scheme": "bearer",
-        "description": "An API token created under Settings \u2192 API tokens (`oa_uptime_...`): one role, always an expiry (ADR 0003)."
+        "description": "An API token created under Settings → API tokens (`oa_uptime_...`): one role, always an expiry (ADR 0003)."
       },
       "adminToken": {
         "type": "http",
@@ -1455,106 +1321,6 @@
           "nextCursor": {
             "type": "string",
             "description": "Pass the previous page's nextCursor to get the next page."
-          }
-        }
-      },
-      "NewCheck": {
-        "type": "object",
-        "required": [
-          "name",
-          "type",
-          "target"
-        ],
-        "additionalProperties": false,
-        "properties": {
-          "name": {
-            "type": "string",
-            "maxLength": 64
-          },
-          "group": {
-            "type": "string",
-            "maxLength": 64
-          },
-          "type": {
-            "$ref": "#/components/schemas/CheckType"
-          },
-          "target": {
-            "type": "string",
-            "description": "`http`: a web address. `tcp`: host:port. `dns`: a host name. `tls`: a host name, with :port if not 443."
-          },
-          "expect": {
-            "$ref": "#/components/schemas/Expect"
-          },
-          "intervalSeconds": {
-            "type": "integer",
-            "minimum": 30,
-            "maximum": 86400,
-            "default": 300
-          },
-          "failuresToDown": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10,
-            "default": 2
-          },
-          "public": {
-            "type": "boolean",
-            "default": false,
-            "description": "Shown on the public status page by name, group and state."
-          },
-          "tags": {
-            "type": "array",
-            "maxItems": 8,
-            "items": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "UpdateCheck": {
-        "type": "object",
-        "additionalProperties": false,
-        "minProperties": 1,
-        "description": "The type cannot change.",
-        "properties": {
-          "name": {
-            "type": "string",
-            "maxLength": 64
-          },
-          "group": {
-            "type": "string",
-            "maxLength": 64
-          },
-          "target": {
-            "type": "string",
-            "description": "`http`: a web address. `tcp`: host:port. `dns`: a host name. `tls`: a host name, with :port if not 443."
-          },
-          "expect": {
-            "$ref": "#/components/schemas/Expect"
-          },
-          "intervalSeconds": {
-            "type": "integer",
-            "minimum": 30,
-            "maximum": 86400,
-            "default": 300
-          },
-          "failuresToDown": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10,
-            "default": 2
-          },
-          "public": {
-            "type": "boolean",
-            "default": false,
-            "description": "Shown on the public status page by name, group and state."
-          },
-          "tags": {
-            "type": "array",
-            "maxItems": 8,
-            "items": {
-              "type": "string"
-            }
           }
         }
       },

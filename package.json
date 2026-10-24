@@ -1,6 +1,6 @@
 {
   "name": "@openasy/uptime",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "description": "OpenAsy Uptime: HTTP, TCP, DNS and TLS checks run from anywhere, their outages, and a public status page.",
   "license": "AGPL-3.0-only",
