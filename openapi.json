@@ -2,7 +2,7 @@
   "openapi": "3.1.1",
   "info": {
     "title": "OpenAsy Uptime API",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "summary": "Checks, their state and outages, and a public status page. Runners run the checks; the server never probes anything.",
     "description": "Every screen of Uptime uses this API, and so can your scripts (ADR 0014). Within `/api/v1` changes are additive only; anything removed is deprecated first (ADR 0024). Errors use Problem Details (RFC 9457).\n\nChecks are defined here and run by a runner: the script at `/uptime-runner.mjs`, started from a CI cron or any machine, with `UPTIME_INGEST_TOKEN`. Everything else takes the session of a signed-in person or an API token, and each operation names the role it needs (`x-openasy-role`: viewer, editor, admin; ADR 0003). `/status` and `/api/v1/status/public` need no sign-in and show only checks marked public.\n\nSign-in, members and API tokens are under `/api/v1/auth`, provided by [@openasy/auth](https://github.com/openasy/auth#routes).",
     "license": {

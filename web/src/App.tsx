@@ -28,6 +28,7 @@ import {
   useAgo,
 } from "@openasy/ui";
 import { AccountSettings, AuthGate, MembersSettings, SignInSettings, TokensSettings, useAuth, useInstallBrand } from "@openasy/auth/react";
+import colophon from "virtual:openasy-colophon";
 import { Activity, ExternalLink, KeyRound, LogIn, LogOut, Plus, Settings2, Trash2, TriangleAlert, UserRound, Users } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import {
@@ -45,7 +46,7 @@ import {
 } from "./api.ts";
 import { useT, type T } from "./i18n.ts";
 
-const PAGES = ["outages", "setup", "account", "members", "signin", "tokens"] as const;
+const PAGES = ["outages", "setup", "account", "members", "signin", "tokens", "about"] as const;
 type Route = { page: "checks" | (typeof PAGES)[number] } | { page: "check"; id: string };
 /** The first path segments that are pages of this UI, for followLinks. */
 export const PATHS = ["checks", ...PAGES];
@@ -863,6 +864,7 @@ function Product() {
   return (
     <AppShell
       product="uptime"
+      about={colophon}
       nav={nav}
       activeNav={active}
       onNavigate={(id) => navigate(`/${id}`)}
