@@ -6,17 +6,17 @@ import type { AddressInfo } from "node:net";
 import { createApp, type AppOptions } from "./app.ts";
 import { fileId, parseEndpoints } from "./endpoints.ts";
 import { openDb } from "./db.ts";
-import { createUptime } from "./uptime.ts";
+import { createUptime, type UptimeOptions } from "./uptime.ts";
 
 export const INGEST_TOKEN = "test-ingest-token";
 export const ADMIN_TOKEN = "test-admin-token";
 export const MINUTE = 60_000;
 export const HOUR = 60 * MINUTE;
 
-export async function startApp(opts: Partial<AppOptions> & { version: string; start?: number }) {
+export async function startApp(opts: Partial<AppOptions> & { version: string; start?: number; uptimeOptions?: Omit<UptimeOptions, "clock"> }) {
   const db = openDb(":memory:");
   const clock = { now: opts.start ?? Date.parse("2026-10-01T12:00:00Z") };
-  const uptime = createUptime(db, { clock: () => clock.now });
+  const uptime = createUptime(db, { clock: () => clock.now, ...opts.uptimeOptions });
   // The origin is known once the port is, so the handler is set after listening.
   let handler: RequestListener = (_req, res) => res.writeHead(503).end();
   const server: Server = createServer((req, res) => handler(req, res));
@@ -24,7 +24,7 @@ export async function startApp(opts: Partial<AppOptions> & { version: string; st
   const base = `http://localhost:${(server.address() as AddressInfo).port}`;
   const auth = createAuth({ db, product: "uptime", productName: "OpenAsy Uptime", origin: base });
   const runnerScript = readFileSync(new URL("../runner/uptime-runner.mjs", import.meta.url), "utf8");
-  const { start: _start, ...rest } = opts;
+  const { start: _start, uptimeOptions: _uptimeOptions, ...rest } = opts;
   handler = createApp({ db, uptime, auth, ingestToken: INGEST_TOKEN, adminToken: ADMIN_TOKEN, runnerScript, ...rest });
   const as =
     (token: string) =>

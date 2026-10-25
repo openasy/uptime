@@ -4,6 +4,7 @@ import { createAuth, oidcFromEnv, readSecretsKey } from "@openasy/auth";
 import { createApp, createMetricsHandler } from "./app.ts";
 import { openDb } from "./db.ts";
 import { watchEndpoints } from "./endpoints.ts";
+import { createIncidentsLink, type Severity } from "./incidents.ts";
 import { log } from "./log.ts";
 import { parseProducts } from "./products.ts";
 import { createUptime, criticalDays, parseWarnDays } from "./uptime.ts";
@@ -44,7 +45,25 @@ const auth = createAuth({
   // Audit log (ADR 0013): every sign-in, failure and change to members and tokens.
   onEvent: (event) => log(event.type === "sign-in-failed" ? "warn" : "info", "auth", { event }),
 });
-const uptime = createUptime(db, { retentionDays, tlsMinDays });
+const products = parseProducts(process.env.OPENASY_PRODUCTS);
+if (products.invalid.length) log("warn", "OPENASY_PRODUCTS: left out entries that are not id=https://address", { entries: products.invalid });
+// Each outage opens an incident in OpenAsy Incidents, with a token that has the editor role there (ADR 0041).
+// Incidents is called at UPTIME_INCIDENTS_URL, or where OPENASY_PRODUCTS says people open it.
+const incidentsPage = products.products.find((p) => p.id === "incidents")?.url;
+const incidentsUrl = process.env.UPTIME_INCIDENTS_URL ?? incidentsPage;
+const incidentSeverity = (process.env.UPTIME_INCIDENTS_SEVERITY ?? "high") as Severity;
+if (!["critical", "high", "medium", "low"].includes(incidentSeverity)) throw new Error("UPTIME_INCIDENTS_SEVERITY must be critical, high, medium or low");
+if (process.env.UPTIME_INCIDENTS_TOKEN && !incidentsUrl)
+  log("warn", "UPTIME_INCIDENTS_TOKEN is set but no address: set UPTIME_INCIDENTS_URL, or incidents in OPENASY_PRODUCTS");
+const incidents =
+  process.env.UPTIME_INCIDENTS_TOKEN && incidentsUrl
+    ? {
+        link: createIncidentsLink({ url: incidentsUrl, token: process.env.UPTIME_INCIDENTS_TOKEN, publicUrl: incidentsPage, product: "uptime" }),
+        severity: incidentSeverity,
+        checkUrl: (id: string) => `${publicUrl}/checks/${encodeURIComponent(id)}`,
+      }
+    : undefined;
+const uptime = createUptime(db, { retentionDays, tlsMinDays, incidents });
 const endpoints = endpointsPath
   ? watchEndpoints(endpointsPath, (list) => uptime.syncFile(list), {
       onChange: (s) =>
@@ -53,8 +72,6 @@ const endpoints = endpointsPath
           : log(s.warnings.length ? "warn" : "info", "endpoints file applied", { path: s.path, entries: s.entries, warnings: s.warnings }),
     })
   : undefined;
-const products = parseProducts(process.env.OPENASY_PRODUCTS);
-if (products.invalid.length) log("warn", "OPENASY_PRODUCTS: left out entries that are not id=https://address", { entries: products.invalid });
 const server = createServer(
   createApp({
     db,
@@ -75,7 +92,16 @@ const server = createServer(
 const metricsServer = metricsPort !== undefined ? createServer(createMetricsHandler(uptime, version)) : undefined;
 metricsServer?.listen(metricsPort, () => log("info", "metrics on their own port", { port: metricsPort }));
 
-server.listen(port, () => log("info", "uptime started", { version, port, db: dbPath, headless, retentionDays }));
+server.listen(port, () =>
+  log("info", "uptime started", {
+    version,
+    port,
+    db: dbPath,
+    headless,
+    retentionDays,
+    incidents: incidents ? { url: incidentsUrl, severity: incidentSeverity } : "off",
+  }),
+);
 if (!process.env.UPTIME_INGEST_TOKEN)
   log(
     "warn",
@@ -91,7 +117,13 @@ const setup = auth.setupLink();
 if (setup) log("info", "no owner yet: open this link once to create the owner account", { url: setup });
 
 uptime.purge();
-const timers: NodeJS.Timeout[] = [setInterval(() => auth.purge(), 5 * 60_000), setInterval(() => uptime.purge(), 24 * 3_600_000)];
+void uptime.deliverIncidents();
+const timers: NodeJS.Timeout[] = [
+  setInterval(() => auth.purge(), 5 * 60_000),
+  setInterval(() => uptime.purge(), 24 * 3_600_000),
+  // Outages whose incident or end could not be sent yet, such as while Incidents restarts.
+  setInterval(() => void uptime.deliverIncidents(), 60_000),
+];
 
 function shutdown(signal: string) {
   log("info", "shutting down", { signal });

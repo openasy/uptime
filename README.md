@@ -66,6 +66,20 @@ its last good version stay, and the Checks page and the log say what to fix.
 - An editor can **pause** a check: runners skip it and the status page shows it as maintenance.
 - Passwords in addresses are removed from what a runner sends.
 
+## Incidents
+
+With `UPTIME_INCIDENTS_TOKEN`, each outage opens an incident in [OpenAsy Incidents](https://github.com/openasy/incidents)
+at `UPTIME_INCIDENTS_SEVERITY` (high by default), with a link back to the check as its evidence, and its end is noted
+on the incident's timeline with how long it lasted (ADR 0041). Resolving the incident stays with people. Make the token
+in Incidents under Settings, API tokens, with the editor role: it opens and updates incidents and does nothing else.
+uptime calls Incidents at `UPTIME_INCIDENTS_URL`, such as `http://incidents:8080` next to it, or where
+`OPENASY_PRODUCTS` says people open it.
+
+- One outage is one incident; a check that goes down again later opens a new one. The incident never names the
+  check's target.
+- Results are answered before Incidents is called, so a slow or stopped Incidents never holds them back. An outage
+  whose incident or end could not be sent says why under Outages, and is tried again every minute for a day.
+
 ## The runner
 
 ```bash
@@ -123,6 +137,9 @@ are on http://localhost:8080, the API reference at http://localhost:8080/api/doc
 | `UPTIME_SECRETS_KEY_FILE` | `/run/secrets/openasy-kek` | 32-byte key-encryption key |
 | `UPTIME_DB` | `/data/uptime.db` | SQLite file (WAL), on the `/data` volume |
 | `UPTIME_RETENTION_DAYS` | `30` | Results older than this are deleted. Ended outages are kept for 400 days |
+| `UPTIME_INCIDENTS_TOKEN` | | An Incidents API token with the editor role: outages open incidents |
+| `UPTIME_INCIDENTS_URL` | the `incidents` entry of `OPENASY_PRODUCTS` | Where uptime calls Incidents, such as `http://incidents:8080` |
+| `UPTIME_INCIDENTS_SEVERITY` | `high` | The severity of an outage's incident: critical, high, medium or low |
 | `UPTIME_METRICS_PORT` | | Serve `/metrics` on this port only (ADR 0026) |
 | `UPTIME_HEADLESS` | `false` | `true` serves only the API |
 | `OPENASY_ENDPOINTS` | | A YAML file of endpoints to check, shared with Certificates; see [From a file](#from-a-file) |

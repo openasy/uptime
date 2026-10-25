@@ -1,5 +1,6 @@
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import { fileId, type Endpoint } from "./endpoints.ts";
+import type { IncidentsLink, Severity } from "./incidents.ts";
 
 export type ProblemCode =
   "invalid-token" | "invalid-json" | "invalid-body" | "not-found" | "conflict" | "not-configured" | "payload-too-large" | "internal-error";
@@ -164,6 +165,27 @@ export interface UptimeOptions {
   tlsMinDays?: number;
   /** For tests. */
   clock?: () => number;
+  /** Opens an incident in OpenAsy Incidents for each outage, and notes on it when the outage ends (ADR 0041). */
+  incidents?: {
+    link: IncidentsLink;
+    severity: Severity;
+    /** The check's page in uptime, linked from the incident. */
+    checkUrl: (id: string) => string;
+  };
+}
+
+/** An outage's incident is tried again while Incidents is unreachable, for a day at most. */
+const INCIDENT_TRIES_MS = 86_400_000;
+
+/** A duration as people say it: 45 seconds, 12 minutes, 3 hours 5 minutes. */
+function spoken(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s} ${s === 1 ? "second" : "seconds"}`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} ${m === 1 ? "minute" : "minutes"}`;
+  const h = Math.floor(m / 60);
+  const rest = m % 60;
+  return `${h} ${h === 1 ? "hour" : "hours"}${rest ? ` ${rest} ${rest === 1 ? "minute" : "minutes"}` : ""}`;
 }
 
 /** The critical threshold of a warn-days list, as Certificates computes it: 7, or the largest value when it is less. */
@@ -187,7 +209,7 @@ function targetOf(e: Endpoint): string {
 const WINDOWS = { h24: DAY, d7: 7 * DAY, d30: 30 * DAY, d90: 90 * DAY } as const;
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
 
-export function createUptime(db: DatabaseSync, { retentionDays = 30, tlsMinDays = 7, clock = Date.now }: UptimeOptions = {}) {
+export function createUptime(db: DatabaseSync, { retentionDays = 30, tlsMinDays = 7, clock = Date.now, incidents }: UptimeOptions = {}) {
   const iso = (t: number) => new Date(t).toISOString();
 
   const checkRow = (id: string) => {
@@ -286,19 +308,86 @@ export function createUptime(db: DatabaseSync, { retentionDays = 30, tlsMinDays 
     endedAt: (o.ended_at as string | null) ?? null,
     durationSeconds: Math.round(((o.ended_at ? Date.parse(o.ended_at) : clock()) - Date.parse(o.started_at)) / 1000),
     detail: (o.detail as string | null) ?? null,
+    incident: o.incident_state
+      ? {
+          state: o.incident_state as "pending" | "opened" | "failed",
+          key: (o.incident_key as string | null) ?? null,
+          url: (o.incident_url as string | null) ?? null,
+          error: (o.incident_error as string | null) ?? null,
+        }
+      : null,
   });
 
+  let delivering: Promise<void> | undefined;
+  /**
+   * Opens the incidents of outages waiting for one, then notes the end of those that ended, one at a time. What fails
+   * stays waiting, with why, and is tried again at the next turn, for a day; Incidents keeps one incident per outage
+   * however often it is asked.
+   */
+  function deliverIncidents(): Promise<void> {
+    if (!incidents) return Promise.resolve();
+    if (delivering) return delivering;
+    const run = (async () => {
+      db.prepare(
+        "UPDATE outages SET incident_state = 'failed', incident_error = COALESCE(incident_error, 'Incidents was not reached for a day.') WHERE incident_state = 'pending' AND started_at < ?",
+      ).run(iso(clock() - INCIDENT_TRIES_MS));
+      const opening = db
+        .prepare("SELECT o.*, c.name FROM outages o JOIN checks c ON c.id = o.check_id WHERE o.incident_state = 'pending' ORDER BY o.id LIMIT 50")
+        .all() as Array<Record<string, any>>;
+      for (const o of opening) {
+        try {
+          const opened = await incidents.link.open({
+            reference: `outage:${o.id}`,
+            title: `${o.name} is down`,
+            severity: incidents.severity,
+            summary: `Uptime: ${o.name} has been down since ${o.started_at}.${o.detail ? ` The last check said: ${o.detail}` : ""}`,
+            evidence: { title: `Uptime check: ${o.name}`, url: incidents.checkUrl(o.check_id as string) },
+          });
+          db.prepare(
+            "UPDATE outages SET incident_state = 'opened', incident_id = ?, incident_key = ?, incident_url = ?, incident_error = NULL WHERE id = ?",
+          ).run(opened.id, opened.key, opened.url, o.id);
+        } catch (err) {
+          db.prepare("UPDATE outages SET incident_error = ? WHERE id = ?").run((err as Error).message.slice(0, 300), o.id);
+        }
+      }
+      const ended = db
+        .prepare(
+          "SELECT o.*, c.name FROM outages o JOIN checks c ON c.id = o.check_id WHERE o.incident_state = 'opened' AND o.incident_note = 'pending' ORDER BY o.id LIMIT 50",
+        )
+        .all() as Array<Record<string, any>>;
+      for (const o of ended) {
+        try {
+          await incidents.link.note(
+            o.incident_id as string,
+            `Uptime: ${o.name} is up again since ${o.ended_at}, after ${spoken(Date.parse(o.ended_at) - Date.parse(o.started_at))} down.`,
+          );
+          db.prepare("UPDATE outages SET incident_note = 'sent', incident_error = NULL WHERE id = ?").run(o.id);
+        } catch (err) {
+          db.prepare("UPDATE outages SET incident_error = ? WHERE id = ?").run((err as Error).message.slice(0, 300), o.id);
+        }
+      }
+    })();
+    // Cleared after it is set, also when there was nothing to send and the run ended at once.
+    delivering = run.finally(() => (delivering = undefined));
+    return delivering;
+  }
+
   /** One result moves the state machine one step. Results that arrive late are kept but do not move it back. */
-  function step(c: CheckRow, r: { time: string; ok: boolean; detail: string | null }) {
+  /** Returns whether an outage started or ended. */
+  function step(c: CheckRow, r: { time: string; ok: boolean; detail: string | null }): boolean {
     const st = stateRow(c.id);
-    if (st && Date.parse(r.time) <= Date.parse(st.last_result_at)) return;
+    if (st && Date.parse(r.time) <= Date.parse(st.last_result_at)) return false;
     if (r.ok) {
       const since = st && st.state === "up" ? st.since : r.time;
       db.prepare(
         "INSERT INTO state (check_id, state, failures, streak_at, since, first_result_at, last_result_at) VALUES (?, 'up', 0, NULL, ?, ?, ?) ON CONFLICT (check_id) DO UPDATE SET state = 'up', failures = 0, streak_at = NULL, since = excluded.since, last_result_at = excluded.last_result_at",
       ).run(c.id, since, st?.first_result_at ?? r.time, r.time);
-      db.prepare("UPDATE outages SET ended_at = ? WHERE check_id = ? AND ended_at IS NULL").run(r.time, c.id);
-      return;
+      const end = db
+        .prepare(
+          "UPDATE outages SET ended_at = ?, incident_note = CASE WHEN incident_state IN ('pending', 'opened') THEN 'pending' END WHERE check_id = ? AND ended_at IS NULL",
+        )
+        .run(r.time, c.id);
+      return end.changes > 0;
     }
     const failures = (st?.failures ?? 0) + 1;
     const streak = st?.streak_at ?? r.time;
@@ -308,11 +397,19 @@ export function createUptime(db: DatabaseSync, { retentionDays = 30, tlsMinDays 
       "INSERT INTO state (check_id, state, failures, streak_at, since, first_result_at, last_result_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (check_id) DO UPDATE SET state = excluded.state, failures = excluded.failures, streak_at = excluded.streak_at, since = excluded.since, last_result_at = excluded.last_result_at",
     ).run(c.id, next, failures, streak, since, st?.first_result_at ?? r.time, r.time);
     if (next === "down" && !db.prepare("SELECT 1 FROM outages WHERE check_id = ? AND ended_at IS NULL").get(c.id)) {
-      db.prepare("INSERT INTO outages (check_id, started_at, detail) VALUES (?, ?, ?)").run(c.id, streak, r.detail);
+      db.prepare("INSERT INTO outages (check_id, started_at, detail, incident_state) VALUES (?, ?, ?, ?)").run(
+        c.id,
+        streak,
+        r.detail,
+        incidents ? "pending" : null,
+      );
+      return true;
     }
+    return false;
   }
 
   return {
+    deliverIncidents,
     setPaused(id: string, paused: boolean) {
       checkRow(id);
       db.prepare("UPDATE checks SET paused = ? WHERE id = ?").run(paused ? 1 : 0, id);
@@ -448,18 +545,21 @@ export function createUptime(db: DatabaseSync, { retentionDays = 30, tlsMinDays 
         };
       });
       parsed.sort((a, b) => a.time.localeCompare(b.time));
+      let moved = false;
       db.exec("BEGIN IMMEDIATE");
       try {
         const insert = db.prepare("INSERT INTO results (check_id, time, ok, latency_ms, detail, location) VALUES (?, ?, ?, ?, ?, ?)");
         for (const r of parsed) {
           insert.run(r.c.id, r.time, r.ok ? 1 : 0, r.latencyMs, r.detail, r.location);
-          step(r.c, r);
+          if (step(r.c, r)) moved = true;
         }
         db.exec("COMMIT");
       } catch (err) {
         db.exec("ROLLBACK");
         throw err;
       }
+      // Incidents is called after the answer is decided, so a slow or absent Incidents never holds back results.
+      if (moved) void deliverIncidents();
       return { accepted: parsed.length };
     },
 

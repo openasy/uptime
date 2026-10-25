@@ -34,6 +34,31 @@ import { api, MfaSetupRequired, Unauthorized, type Check, type Outage, type Prod
 import { useT, type T } from "./i18n.ts";
 import { search } from "./search.ts";
 
+/** The incident an outage opened in Incidents: its key as a link, or that it waits and why. */
+function IncidentCell({ incident }: { incident: NonNullable<Outage["incident"]> }) {
+  const t = useT();
+  if (incident.state === "opened" && incident.url)
+    return (
+      <a href={incident.url} className="font-mono text-xs">
+        {incident.key}
+      </a>
+    );
+  return (
+    <span title={incident.error ?? undefined}>
+      <StatusBadge tone={incident.state === "failed" ? "danger" : "warning"}>
+        {incident.state === "failed" ? t("incident.failed") : t("incident.pending")}
+      </StatusBadge>
+    </span>
+  );
+}
+
+/** The incident column, shown only when an outage in the list opened one. */
+function incidentColumns(t: T, rows: Outage[] | undefined): Column<Outage>[] {
+  return rows?.some((o) => o.incident)
+    ? [{ id: "incident", header: t("incident.incident"), cell: (o) => (o.incident ? <IncidentCell incident={o.incident} /> : null) }]
+    : [];
+}
+
 const PAGES = ["outages", "setup", "account", "members", "signin", "tokens", "about"] as const;
 type Route = { page: "checks" | (typeof PAGES)[number] } | { page: "check"; id: string };
 /** The first path segments that are pages of this UI, for followLinks. */
@@ -377,6 +402,7 @@ function CheckPage({ call, id, reload }: { call: Call; id: string; reload: () =>
         </span>
       ),
     },
+    ...incidentColumns(msg, outages),
   ];
 
   return (
@@ -561,6 +587,7 @@ function OutagesPage({ call }: { call: Call }) {
         </span>
       ),
     },
+    ...incidentColumns(t, rows),
   ];
   return (
     <>

@@ -147,5 +147,10 @@
     "notYetCritical": "sertifika henüz kritik değil",
     "validForDays": "{{days}}+ gün geçerli",
     "connects": "bağlanıyor"
+  },
+  "incident": {
+    "incident": "Olay",
+    "pending": "Açılıyor",
+    "failed": "Açılamadı"
   }
 }

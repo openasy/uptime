@@ -54,6 +54,8 @@ export interface Outage {
   endedAt: string | null;
   durationSeconds: number;
   detail: string | null;
+  /** The incident it opened in OpenAsy Incidents, when uptime is linked to it. */
+  incident: { state: "pending" | "opened" | "failed"; key: string | null; url: string | null; error: string | null } | null;
 }
 
 export interface Summary {

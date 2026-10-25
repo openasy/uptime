@@ -147,5 +147,10 @@
     "notYetCritical": "certificate not yet critical",
     "validForDays": "valid for {{days}}+ days",
     "connects": "connects"
+  },
+  "incident": {
+    "incident": "Incident",
+    "pending": "Opening",
+    "failed": "Not opened"
   }
 }

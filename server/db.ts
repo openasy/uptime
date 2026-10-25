@@ -54,6 +54,15 @@ const MIGRATIONS = [
    -- one an endpoint runs on, from the hosts file.
    ALTER TABLE checks ADD COLUMN source TEXT NOT NULL DEFAULT 'ui' CHECK (source IN ('ui', 'file'));
    ALTER TABLE checks ADD COLUMN server TEXT`,
+  // An outage opens an incident in OpenAsy Incidents, and its end is noted on it (ADR 0047, 0041). pending until
+  // Incidents has it, tried again while it is unreachable; failed when it was given up. incident_note is the end's.
+  `ALTER TABLE outages ADD COLUMN incident_state TEXT CHECK (incident_state IN ('pending', 'opened', 'failed'));
+   ALTER TABLE outages ADD COLUMN incident_id TEXT;
+   ALTER TABLE outages ADD COLUMN incident_key TEXT;
+   ALTER TABLE outages ADD COLUMN incident_url TEXT;
+   ALTER TABLE outages ADD COLUMN incident_error TEXT;
+   ALTER TABLE outages ADD COLUMN incident_note TEXT CHECK (incident_note IN ('pending', 'sent'));
+   CREATE INDEX outages_incident ON outages (incident_state, incident_note) WHERE incident_state = 'pending' OR incident_note = 'pending'`,
 ];
 
 /** Opens the product's single SQLite file in WAL mode (ADR 0011) and migrates it forward. */

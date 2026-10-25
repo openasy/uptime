@@ -1505,7 +1505,8 @@
           "startedAt",
           "endedAt",
           "durationSeconds",
-          "detail"
+          "detail",
+          "incident"
         ],
         "additionalProperties": false,
         "properties": {
@@ -1554,6 +1555,71 @@
               },
               {
                 "type": "string"
+              }
+            ]
+          },
+          "incident": {
+            "description": "The incident this outage opened in OpenAsy Incidents, when UPTIME_INCIDENTS_TOKEN is set; null otherwise. Its end is noted on the incident.",
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state",
+                  "key",
+                  "url",
+                  "error"
+                ],
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "opened",
+                      "failed"
+                    ],
+                    "description": "pending: waiting for Incidents, tried again every minute. opened: Incidents has it. failed: given up after a day."
+                  },
+                  "key": {
+                    "oneOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "string",
+                        "examples": [
+                          "INC-12"
+                        ]
+                      }
+                    ]
+                  },
+                  "url": {
+                    "oneOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "string",
+                        "format": "uri"
+                      }
+                    ],
+                    "description": "The incident's page in Incidents."
+                  },
+                  "error": {
+                    "oneOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ],
+                    "description": "Why the last try failed."
+                  }
+                }
               }
             ]
           }

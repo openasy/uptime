@@ -147,5 +147,10 @@
     "notYetCritical": "Zertifikat noch nicht kritisch",
     "validForDays": "{{days}}+ Tage gültig",
     "connects": "verbindet sich"
+  },
+  "incident": {
+    "incident": "Vorfall",
+    "pending": "Wird eröffnet",
+    "failed": "Nicht eröffnet"
   }
 }
