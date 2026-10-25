@@ -155,6 +155,8 @@ describe("responses match openapi.json", () => {
     await call("GET", "/api/v1/outages", {});
     await call("GET", "/api/v1/summary", admin());
     await call("GET", "/api/v1/summary", {});
+    await call("GET", "/api/v1/overview", admin());
+    await call("GET", "/api/v1/overview", {});
     const { body } = await call("GET", "/api/v1/status/public");
     expect(body).toMatchObject({ overall: "outage", checks: [{ name: "Shop", state: "outage" }], incidents: [{ check: "Shop", ongoing: true }] });
   });

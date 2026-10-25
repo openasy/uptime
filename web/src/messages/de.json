@@ -1,4 +1,28 @@
 {
+  "overviewPage": {
+    "overview": "Übersicht",
+    "uptime24h": "Verfügbarkeit 24 h",
+    "uptime30Days": "Verfügbarkeit, 30 Tage",
+    "uptime30DaysDetail": "Der Mittelwert der laufenden Checks, Ausfälle sekundengenau gezählt.",
+    "last24h": "Letzte 24 Stunden: {{value}}",
+    "last90Days": "Letzte 90 Tage",
+    "last90DaysDetail": "Jeder Tag nach seinem schlechtesten Check: grün ab 99,9 %, gelb ab 99 %, rot darunter.",
+    "daysAgo": "vor {{n}} Tagen",
+    "today": "Heute",
+    "noData": "Noch keine Ergebnisse",
+    "dayDetail_one": "{{uptime}} im Mittel, schlechtester {{worst}}, {{count}} Ausfall begonnen",
+    "dayDetail_other": "{{uptime}} im Mittel, schlechtester {{worst}}, {{count}} Ausfälle begonnen",
+    "latency": "Latenz pro Stunde",
+    "latencyDetail": "Die mittlere Antwortzeit erfolgreicher Ergebnisse über alle Checks.",
+    "meanLatency": "Mittlere Latenz",
+    "byState": "Checks nach Zustand",
+    "byStateDetail": "Wo jeder Check gerade steht.",
+    "checks": "Checks",
+    "mostDowntime": "Meiste Ausfallzeit",
+    "mostDowntimeDetail": "Zeit in einem Ausfall in den letzten 30 Tagen.",
+    "noDowntime": "Keine Ausfallzeit in 30 Tagen",
+    "latestOutages": "Letzte Ausfälle"
+  },
   "checksPage": {
     "state": "Zustand",
     "check": "Prüfung",
@@ -109,6 +133,7 @@
     "signOut": "Abmelden"
   },
   "product": {
+    "overview": "Übersicht",
     "checks": "Prüfungen",
     "outages": "Ausfälle",
     "setup": "Einrichtung",

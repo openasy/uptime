@@ -697,6 +697,49 @@
         "x-openasy-role": "viewer"
       }
     },
+    "/api/v1/overview": {
+      "get": {
+        "operationId": "getOverview",
+        "tags": [
+          "Product"
+        ],
+        "summary": "What the overview draws",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Uptime over the last day and 30 days across checks that are not paused, each of the last 90 days (mean and worst check, outages started), mean latency per hour of successful results over the last 24 hours, the checks with the most downtime in 30 days and the latest outages, ongoing first.\n\nNeeds the viewer role.",
+        "responses": {
+          "200": {
+            "description": "What the overview draws.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Overview"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-openasy-role": "viewer"
+      }
+    },
     "/api/v1/version": {
       "get": {
         "operationId": "getVersion",
@@ -1881,6 +1924,130 @@
               "type": "string"
             },
             "description": "What to fix that did not stop the file from being applied."
+          }
+        }
+      },
+      "Overview": {
+        "type": "object",
+        "required": [
+          "uptime",
+          "days",
+          "latency",
+          "downtime",
+          "outages"
+        ],
+        "properties": {
+          "uptime": {
+            "type": "object",
+            "required": [
+              "h24",
+              "d30"
+            ],
+            "description": "Percent, the mean over checks; null without history.",
+            "properties": {
+              "h24": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "d30": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            }
+          },
+          "days": {
+            "type": "array",
+            "description": "Oldest first; the last is today (UTC).",
+            "items": {
+              "type": "object",
+              "required": [
+                "date",
+                "uptime",
+                "worst",
+                "outages"
+              ],
+              "properties": {
+                "date": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "uptime": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "worst": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "outages": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "latency": {
+            "type": "object",
+            "required": [
+              "hours",
+              "ms"
+            ],
+            "properties": {
+              "hours": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "ms": {
+                "type": "array",
+                "items": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "downtime": {
+            "type": "array",
+            "description": "Eight at most, the most first; checks without downtime are left out.",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "name",
+                "seconds"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "seconds": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "outages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Outage"
+            }
           }
         }
       }

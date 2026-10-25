@@ -58,6 +58,16 @@ export interface Outage {
   incident: { state: "pending" | "opened" | "failed"; key: string | null; url: string | null; error: string | null } | null;
 }
 
+/** What the overview draws (GET /api/v1/overview). Uptimes are percents, null without history. */
+export interface Overview {
+  uptime: { h24: number | null; d30: number | null };
+  /** The last 90 days, oldest first: the mean over checks, the worst check and the outages that started. */
+  days: Array<{ date: string; uptime: number | null; worst: number | null; outages: number }>;
+  latency: { hours: string[]; ms: Array<number | null> };
+  downtime: Array<{ id: string; name: string; seconds: number }>;
+  outages: Outage[];
+}
+
 export interface Summary {
   checks: number;
   up: number;

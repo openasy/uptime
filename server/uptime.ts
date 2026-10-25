@@ -612,6 +612,58 @@ export function createUptime(db: DatabaseSync, { retentionDays = 30, tlsMinDays 
       return { checks: rows.length, ...count, stale, paused, openOutages };
     },
 
+    /**
+     * What the overview draws: uptime over a day and a month across the checks that run, each of the last 90 days at
+     * its worst check, latency per hour, the checks with the most downtime and the latest outages.
+     */
+    overview() {
+      const end = clock();
+      const rows = (db.prepare("SELECT * FROM checks WHERE paused = 0 ORDER BY name").all() as unknown as CheckRow[]).map((c) => ({ c, st: stateRow(c.id) }));
+      const mean = (xs: Array<number | null>) => {
+        const v = xs.filter((x): x is number => x !== null);
+        return v.length ? round3(v.reduce((a, b) => a + b, 0) / v.length) : null;
+      };
+      const perCheck = rows.map(({ c, st }) => ({ c, d30: uptime(c.id, WINDOWS.d30, st), days: days(c.id, 90, st) }));
+      const started = new Map(
+        (
+          db.prepare("SELECT substr(started_at, 1, 10) AS d, COUNT(*) AS n FROM outages WHERE started_at >= ? GROUP BY d").all(iso(end - 90 * DAY)) as Array<{
+            d: string;
+            n: number;
+          }>
+        ).map((r) => [r.d, r.n]),
+      );
+      const dayList = (perCheck[0]?.days ?? days("", 90, undefined)).map((d, i) => {
+        const values = perCheck.map((p) => p.days[i]!.uptime);
+        const known = values.filter((v): v is number => v !== null);
+        return { date: d.date, uptime: mean(values), worst: known.length ? Math.min(...known) : null, outages: started.get(d.date) ?? 0 };
+      });
+      const first = Math.floor(end / 3_600_000) * 3_600_000 - 23 * 3_600_000;
+      const hours = Array.from({ length: 24 }, (_, i) => iso(first + i * 3_600_000));
+      const perHour = new Map(
+        (
+          db
+            .prepare(
+              "SELECT substr(time, 1, 13) AS h, ROUND(AVG(latency_ms)) AS ms FROM results WHERE ok = 1 AND latency_ms IS NOT NULL AND time >= ? GROUP BY h",
+            )
+            .all(hours[0]!) as Array<{ h: string; ms: number }>
+        ).map((r) => [r.h, r.ms]),
+      );
+      const recent = db
+        .prepare("SELECT o.*, c.name FROM outages o JOIN checks c ON c.id = o.check_id ORDER BY o.ended_at IS NOT NULL, o.started_at DESC, o.id DESC LIMIT 8")
+        .all() as Array<Record<string, any>>;
+      return {
+        uptime: { h24: mean(rows.map(({ c, st }) => uptime(c.id, WINDOWS.h24, st))), d30: mean(perCheck.map((p) => p.d30)) },
+        days: dayList,
+        latency: { hours, ms: hours.map((h) => perHour.get(h.slice(0, 13)) ?? null) },
+        downtime: perCheck
+          .map(({ c }) => ({ id: c.id, name: c.name, seconds: Math.round(downtime(c.id, end - WINDOWS.d30, end) / 1000) }))
+          .filter((d) => d.seconds > 0)
+          .sort((a, b) => b.seconds - a.seconds)
+          .slice(0, 8),
+        outages: recent.map(presentOutage),
+      };
+    },
+
     /** For /metrics: one row per check. */
     gauges() {
       return (db.prepare("SELECT * FROM checks ORDER BY name").all() as unknown as CheckRow[]).map((c) => {

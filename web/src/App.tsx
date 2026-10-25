@@ -1,23 +1,29 @@
 import {
   AppShell,
   Badge,
+  BarList,
   BrandProvider,
   Button,
   Callout,
   DataTable,
   Dialog,
+  DonutChart,
   EmptyState,
   FacetFilter,
   FilterBar,
+  Gauge,
   KpiCard,
   KpiGrid,
   navigate,
+  OverviewGrid,
   PageHeader,
   Panel,
   PRODUCT_IDS,
   SegmentedControl,
   StatusBadge,
+  StatusStrip,
   TimeSeriesChart,
+  TONE_COLORS,
   usePath,
   type Column,
   type ProductId,
@@ -28,9 +34,23 @@ import {
 } from "@openasy/ui";
 import { AccountSettings, AuthGate, MembersSettings, SignInSettings, TokensSettings, useAccountMenu, useAuth, useInstallBrand } from "@openasy/auth/react";
 import colophon from "virtual:openasy-colophon";
-import { Activity, ExternalLink, KeyRound, LogIn, LogOut, Trash2, TriangleAlert, UserRound, Users } from "lucide-react";
+import {
+  Activity,
+  CircleAlert,
+  CircleX,
+  Clock,
+  ExternalLink,
+  KeyRound,
+  LayoutDashboard,
+  LogIn,
+  LogOut,
+  Trash2,
+  TriangleAlert,
+  UserRound,
+  Users,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { api, MfaSetupRequired, Unauthorized, type Check, type Outage, type ProductLink, type Result, type State, type Summary } from "./api.ts";
+import { api, MfaSetupRequired, Unauthorized, type Check, type Outage, type Overview, type ProductLink, type Result, type State, type Summary } from "./api.ts";
 import { useT, type T } from "./i18n.ts";
 import { search } from "./search.ts";
 
@@ -60,14 +80,15 @@ function incidentColumns(t: T, rows: Outage[] | undefined): Column<Outage>[] {
 }
 
 const PAGES = ["outages", "setup", "account", "members", "signin", "tokens", "about"] as const;
-type Route = { page: "checks" | (typeof PAGES)[number] } | { page: "check"; id: string };
+type Route = { page: "overview" | "checks" | (typeof PAGES)[number] } | { page: "check"; id: string };
 /** The first path segments that are pages of this UI, for followLinks. */
-export const PATHS = ["checks", ...PAGES];
+export const PATHS = ["overview", "checks", ...PAGES];
 function parseRoute(path: string): Route {
   const [page, id] = path.replace(/^\//, "").split("/");
   if (page === "checks" && id) return { page: "check", id: decodeURIComponent(id) };
   if ((PAGES as readonly string[]).includes(page ?? "")) return { page: page as (typeof PAGES)[number] };
-  return { page: "checks" };
+  if (page === "checks") return { page: "checks" };
+  return { page: "overview" };
 }
 
 /** Data loading with the session; when it ends, the sign-in screen comes back. */
@@ -166,6 +187,176 @@ function toEntry(c: Check): string {
 }
 const toYaml = (checks: Check[]) => ["endpoints:", ...checks.map(toEntry)].join("\n");
 
+/** How a share of uptime reads: green from 99.9%, amber from 99%, red below. */
+const uptimeTone = (v: number | null) => (v === null ? "neutral" : v >= 99.9 ? "success" : v >= 99 ? "warning" : "danger");
+
+function OverviewPage({ call, summary }: { call: Call; summary?: Summary }) {
+  const ago = useAgo();
+  const t = useT();
+  const [o, setO] = useState<Overview>();
+  useEffect(() => void call<Overview>("/api/v1/overview").then(setO, () => {}), [call, summary]);
+  const s = summary;
+  const day = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
+  const hour = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  // Hours before the first result are left out; an hour without one keeps the hour before, rather than reading as 0 ms.
+  const latency = (() => {
+    const from = Math.max(0, o?.latency.ms.findIndex((v) => v !== null) ?? 0);
+    return {
+      hours: o?.latency.hours.slice(from) ?? [],
+      ms: (o?.latency.ms.slice(from) ?? []).reduce<number[]>((out, v) => [...out, v ?? out.at(-1) ?? 0], []),
+    };
+  })();
+  const outageColumns: Column<Outage>[] = [
+    {
+      id: "check",
+      header: t("outagesPage.check"),
+      cell: (x) => (
+        <a href={`/checks/${x.check.id}`} className="font-medium">
+          {x.check.name}
+        </a>
+      ),
+    },
+    { id: "start", header: t("outagesPage.started"), cell: (x) => <span className="whitespace-nowrap text-xs">{ago(x.startedAt)}</span> },
+    {
+      id: "length",
+      header: t("outagesPage.lasted"),
+      align: "right",
+      cell: (x) =>
+        x.endedAt ? (
+          duration(x.durationSeconds)
+        ) : (
+          <StatusBadge tone="danger">{t("outagesPage.ongoing", { duration: duration(x.durationSeconds) })}</StatusBadge>
+        ),
+    },
+    {
+      id: "detail",
+      header: t("outagesPage.why"),
+      width: "40%",
+      cell: (x) => (
+        <span className="uptime-clamp text-xs text-fg-muted" title={x.detail ?? undefined}>
+          {x.detail ?? ""}
+        </span>
+      ),
+    },
+  ];
+  return (
+    <>
+      <PageHeader
+        title={t("overviewPage.overview")}
+        description={s ? `${t("plurals.check", { count: s.checks })}${s.paused ? `, ${s.paused} paused` : ""}` : undefined}
+        actions={
+          <Button icon={<ExternalLink />} onClick={() => window.open("/status", "_blank", "noopener")}>
+            {t("checksPage.statusPage")}
+          </Button>
+        }
+      />
+      {s?.endpointsFile?.error && (
+        <Callout tone="danger" title={t("checksPage.theEndpointsFileIsNot")}>
+          {t("checksPage.theChecksFromItsLast", { error: s.endpointsFile.error, path: s.endpointsFile.path })}
+        </Callout>
+      )}
+      {s && (
+        <KpiGrid minWidth={150}>
+          <KpiCard label={t("checksPage.down")} value={s.down} icon={CircleX} tone={s.down ? "danger" : "success"} href="/checks" />
+          <KpiCard label={t("checksPage.degraded")} value={s.degraded} icon={CircleAlert} tone={s.degraded ? "warning" : "success"} href="/checks" />
+          <KpiCard label={t("checksPage.openOutages")} value={s.openOutages} icon={TriangleAlert} tone={s.openOutages ? "danger" : "success"} href="/outages" />
+          <KpiCard label={t("checksPage.stale")} value={s.stale} icon={Clock} tone={s.stale ? "info" : "success"} />
+          <KpiCard
+            label={t("overviewPage.uptime24h")}
+            value={o ? pct(o.uptime.h24) : "–"}
+            icon={Activity}
+            tone={o && o.uptime.h24 !== null ? uptimeTone(o.uptime.h24) : undefined}
+          />
+        </KpiGrid>
+      )}
+      {o && (
+        <Panel title={t("overviewPage.last90Days")} description={t("overviewPage.last90DaysDetail")}>
+          <StatusStrip
+            label={t("overviewPage.last90Days")}
+            height={36}
+            start={t("overviewPage.daysAgo", { n: 90 })}
+            end={t("overviewPage.today")}
+            cells={o.days.map((d) => ({
+              id: d.date,
+              label: day(d.date),
+              tone: uptimeTone(d.worst),
+              detail:
+                d.uptime === null ? t("overviewPage.noData") : t("overviewPage.dayDetail", { uptime: pct(d.uptime), worst: pct(d.worst), count: d.outages }),
+            }))}
+          />
+        </Panel>
+      )}
+      {o && (
+        <OverviewGrid>
+          <Panel title={t("overviewPage.latency")} description={t("overviewPage.latencyDetail")}>
+            {latency.hours.length ? (
+              <TimeSeriesChart
+                label={t("overviewPage.latency")}
+                labels={latency.hours.map(hour)}
+                height={200}
+                format={(v) => `${Math.round(v)} ms`}
+                series={[{ id: "latency", name: t("overviewPage.meanLatency"), data: latency.ms }]}
+              />
+            ) : (
+              <EmptyState title={t("overviewPage.noData")} />
+            )}
+          </Panel>
+          <Panel title={t("overviewPage.uptime30Days")} description={t("overviewPage.uptime30DaysDetail")}>
+            <Gauge
+              label={t("overviewPage.uptime30Days")}
+              value={o.uptime.d30 ?? 0}
+              display={pct(o.uptime.d30)}
+              tone={uptimeTone(o.uptime.d30)}
+              caption={t("overviewPage.last24h", { value: pct(o.uptime.h24) })}
+            />
+          </Panel>
+        </OverviewGrid>
+      )}
+      {s && o && (
+        <OverviewGrid layout="halves">
+          <Panel title={t("overviewPage.byState")} description={t("overviewPage.byStateDetail")}>
+            <DonutChart
+              label={t("overviewPage.byState")}
+              caption={t("overviewPage.checks")}
+              slices={[
+                { id: "up", name: t("shown.up"), value: s.up, color: TONE_COLORS.success, href: "/checks" },
+                { id: "degraded", name: t("shown.degraded"), value: s.degraded, color: TONE_COLORS.warning, href: "/checks" },
+                { id: "down", name: t("shown.down"), value: s.down, color: TONE_COLORS.danger, href: "/checks" },
+                { id: "stale", name: t("shown.stale"), value: s.stale, color: TONE_COLORS.info, href: "/checks" },
+                { id: "waiting", name: t("shown.waiting"), value: Math.max(0, s.unknown - s.stale), color: TONE_COLORS.neutral, href: "/checks" },
+              ]}
+            />
+          </Panel>
+          <Panel title={t("overviewPage.mostDowntime")} description={t("overviewPage.mostDowntimeDetail")}>
+            {o.downtime.length ? (
+              <BarList
+                label={t("overviewPage.mostDowntime")}
+                format={duration}
+                items={o.downtime.map((d) => ({ id: d.id, label: d.name, value: d.seconds, href: `/checks/${d.id}`, color: TONE_COLORS.danger }))}
+              />
+            ) : (
+              <EmptyState title={t("overviewPage.noDowntime")} />
+            )}
+          </Panel>
+        </OverviewGrid>
+      )}
+      {o && o.outages.length > 0 && (
+        <Panel
+          title={t("overviewPage.latestOutages")}
+          flush
+          actions={
+            <Button size="sm" variant="ghost" onClick={() => navigate("/outages")}>
+              {t("product.outages")}
+            </Button>
+          }
+        >
+          <DataTable label={t("overviewPage.latestOutages")} rows={o.outages} columns={outageColumns} getRowId={(x) => String(x.id)} />
+        </Panel>
+      )}
+    </>
+  );
+}
+
 function ChecksPage({ call, summary }: { call: Call; summary?: Summary; reload: () => void }) {
   const ago = useAgo();
   const msg = useT();
@@ -244,15 +435,6 @@ function ChecksPage({ call, summary }: { call: Call; summary?: Summary; reload: 
           </span>
         }
       />
-      {s && (
-        <KpiGrid minWidth={140}>
-          <KpiCard label={msg("checksPage.down")} value={s.down} tone={s.down ? "danger" : "success"} />
-          <KpiCard label={msg("checksPage.degraded")} value={s.degraded} tone={s.degraded ? "warning" : "success"} />
-          <KpiCard label={msg("checksPage.stale")} value={s.stale} tone={s.stale ? "info" : "success"} />
-          <KpiCard label={msg("checksPage.up")} value={s.up} tone="success" />
-          <KpiCard label={msg("checksPage.openOutages")} value={s.openOutages} tone={s.openOutages ? "danger" : "success"} href="/outages" />
-        </KpiGrid>
-      )}
       {s?.endpointsFile?.error && (
         <Callout tone="danger" title={msg("checksPage.theEndpointsFileIsNot")}>
           {msg("checksPage.theChecksFromItsLast", { error: s.endpointsFile.error, path: s.endpointsFile.path })}
@@ -729,6 +911,7 @@ function Product() {
   }, [reload]);
 
   const nav = [
+    { id: "overview", label: msg("product.overview"), icon: LayoutDashboard },
     { id: "checks", label: msg("product.checks"), icon: Activity, count: summary?.checks },
     { id: "outages", label: msg("product.outages"), icon: TriangleAlert, count: summary?.openOutages || undefined },
   ];
@@ -765,7 +948,9 @@ function Product() {
       onThemeChange={setTheme}
       onLanguageChange={(code) => setLocale(toLocale(code))}
     >
-      {route.page === "checks" ? (
+      {route.page === "overview" ? (
+        <OverviewPage call={call} summary={summary} />
+      ) : route.page === "checks" ? (
         <ChecksPage call={call} summary={summary} reload={reload} />
       ) : route.page === "check" ? (
         <CheckPage key={route.id} call={call} id={route.id} reload={reload} />

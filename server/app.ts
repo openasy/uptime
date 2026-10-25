@@ -211,6 +211,7 @@ export function createApp({
     { method: "GET", path: "/api/v1/version", auth: "none", handle: () => ({ product: "uptime", version }) },
     { method: "GET", path: "/api/v1/products", auth: "viewer", handle: () => ({ products }) },
     { method: "GET", path: "/api/v1/summary", auth: "viewer", handle: () => ({ ...uptime.summary(), endpointsFile: endpointsFile?.() ?? null }) },
+    { method: "GET", path: "/api/v1/overview", auth: "viewer", handle: () => uptime.overview() },
 
     // Anyone may read this; it holds only what an admin marked as public (ADR 0047).
     { method: "GET", path: "/api/v1/status/public", auth: "none", handle: () => uptime.publicStatus() },

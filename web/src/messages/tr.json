@@ -1,4 +1,28 @@
 {
+  "overviewPage": {
+    "overview": "Genel bakış",
+    "uptime24h": "Çalışma süresi 24 sa",
+    "uptime30Days": "Çalışma süresi, 30 gün",
+    "uptime30DaysDetail": "Çalışan kontrollerin ortalaması; kesintiler saniyesine kadar sayılır.",
+    "last24h": "Son 24 saat: {{value}}",
+    "last90Days": "Son 90 gün",
+    "last90DaysDetail": "Her gün en kötü kontrolüne göre: %99,9 ve üstü yeşil, %99 ve üstü sarı, altı kırmızı.",
+    "daysAgo": "{{n}} gün önce",
+    "today": "Bugün",
+    "noData": "Henüz sonuç yok",
+    "dayDetail_one": "Ortalama {{uptime}}, en kötü {{worst}}, {{count}} kesinti başladı",
+    "dayDetail_other": "Ortalama {{uptime}}, en kötü {{worst}}, {{count}} kesinti başladı",
+    "latency": "Saatlik gecikme",
+    "latencyDetail": "Başarılı sonuçların ortalama yanıt süresi, tüm kontrollerde.",
+    "meanLatency": "Ortalama gecikme",
+    "byState": "Duruma göre kontroller",
+    "byStateDetail": "Her kontrolün şu anki durumu.",
+    "checks": "kontrol",
+    "mostDowntime": "En çok kesinti",
+    "mostDowntimeDetail": "Son 30 günde kesintide geçen süre.",
+    "noDowntime": "30 günde kesinti yok",
+    "latestOutages": "Son kesintiler"
+  },
   "checksPage": {
     "state": "Durum",
     "check": "Kontrol",
@@ -109,6 +133,7 @@
     "signOut": "Çıkış yap"
   },
   "product": {
+    "overview": "Genel bakış",
     "checks": "Kontroller",
     "outages": "Kesintiler",
     "setup": "Kurulum",

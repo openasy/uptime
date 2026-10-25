@@ -1,4 +1,28 @@
 {
+  "overviewPage": {
+    "overview": "Overview",
+    "uptime24h": "Uptime 24 h",
+    "uptime30Days": "Uptime, 30 days",
+    "uptime30DaysDetail": "The mean over the checks that run, outages counted to the second.",
+    "last24h": "Last 24 hours: {{value}}",
+    "last90Days": "Last 90 days",
+    "last90DaysDetail": "Each day at its worst check: green from 99.9%, amber from 99%, red below.",
+    "daysAgo": "{{n}} days ago",
+    "today": "Today",
+    "noData": "No results yet",
+    "dayDetail_one": "{{uptime}} on average, worst {{worst}}, {{count}} outage started",
+    "dayDetail_other": "{{uptime}} on average, worst {{worst}}, {{count}} outages started",
+    "latency": "Latency per hour",
+    "latencyDetail": "The mean time to answer of successful results, over every check.",
+    "meanLatency": "Mean latency",
+    "byState": "Checks by state",
+    "byStateDetail": "Where each check stands now.",
+    "checks": "checks",
+    "mostDowntime": "Most downtime",
+    "mostDowntimeDetail": "Time in an outage over the last 30 days.",
+    "noDowntime": "No downtime in 30 days",
+    "latestOutages": "Latest outages"
+  },
   "checksPage": {
     "state": "State",
     "check": "Check",
@@ -109,6 +133,7 @@
     "signOut": "Sign out"
   },
   "product": {
+    "overview": "Overview",
     "checks": "Checks",
     "outages": "Outages",
     "setup": "Setup",

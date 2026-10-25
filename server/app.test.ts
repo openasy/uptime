@@ -339,3 +339,43 @@ describe("access and metrics", () => {
     expect(text).not.toContain('openasy_uptime_check_up{check="Never"}');
   });
 });
+
+describe("the overview", () => {
+  let own: Awaited<ReturnType<typeof startApp>>;
+  beforeAll(async () => {
+    own = await startApp({ version: "0.1.0" });
+  });
+  afterAll(() => own.close());
+
+  it("sums uptime over the checks, marks each day at its worst and ranks downtime", async () => {
+    own.clock.now = Date.parse("2026-10-10T00:00:00Z");
+    const start = own.clock.now;
+    const shop = await own.addCheck("Shop", { failuresToDown: 1 });
+    const api = await own.addCheck("API", { failuresToDown: 1 });
+    await own.report(shop.id, true);
+    await own.report(api.id, true, own.clock.now, { latencyMs: 120 });
+    own.clock.now = start + HOUR;
+    await own.report(shop.id, false);
+    own.clock.now = start + 2 * HOUR;
+    await own.report(shop.id, true, own.clock.now, { latencyMs: 80 });
+    own.clock.now = start + 4 * HOUR;
+    const o = await own.json(await own.admin("/api/v1/overview"));
+    // Shop was down one hour in four, API never: 75% and 100%.
+    expect(o.uptime).toEqual({ h24: 87.5, d30: 87.5 });
+    expect(o.days).toHaveLength(90);
+    expect(o.days.at(-1)).toEqual({ date: "2026-10-10", uptime: 87.5, worst: 75, outages: 1 });
+    expect(o.days[0]).toMatchObject({ uptime: null, worst: null, outages: 0 });
+    expect(o.downtime).toEqual([{ id: shop.id, name: "Shop", seconds: 3600 }]);
+    expect(o.outages).toHaveLength(1);
+    expect(o.outages[0]).toMatchObject({ check: { name: "Shop" }, endedAt: expect.any(String) });
+    expect(o.latency.hours).toHaveLength(24);
+    expect(o.latency.ms.filter((x: number | null) => x !== null)).toEqual([120, 80]);
+  });
+
+  it("leaves paused checks out", async () => {
+    const first = await own.json(await own.admin("/api/v1/overview"));
+    const quiet = await own.addCheck("Quiet");
+    await own.admin(`/api/v1/checks/${quiet.id}/pause`, { method: "POST" });
+    expect((await own.json(await own.admin("/api/v1/overview"))).uptime).toEqual(first.uptime);
+  });
+});
