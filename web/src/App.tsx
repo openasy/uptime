@@ -23,13 +23,16 @@ import {
   type ProductId,
   useThemePreference,
   useAgo,
+  toLocale,
+  useLocalePreference,
 } from "@openasy/ui";
-import { AccountSettings, AuthGate, MembersSettings, SignInSettings, TokensSettings, useAuth, useInstallBrand } from "@openasy/auth/react";
+import { AccountSettings, AuthGate, MembersSettings, SignInSettings, TokensSettings, useAccountMenu, useAuth, useInstallBrand } from "@openasy/auth/react";
 import colophon from "virtual:openasy-colophon";
-import { Activity, ExternalLink, KeyRound, LogIn, LogOut, Settings2, Trash2, TriangleAlert, UserRound, Users } from "lucide-react";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { Activity, ExternalLink, KeyRound, LogIn, LogOut, Trash2, TriangleAlert, UserRound, Users } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, MfaSetupRequired, Unauthorized, type Check, type Outage, type ProductLink, type Result, type State, type Summary } from "./api.ts";
-import { useT } from "./i18n.ts";
+import { useT, type T } from "./i18n.ts";
+import { search } from "./search.ts";
 
 const PAGES = ["outages", "setup", "account", "members", "signin", "tokens", "about"] as const;
 type Route = { page: "checks" | (typeof PAGES)[number] } | { page: "check"; id: string };
@@ -66,13 +69,21 @@ function duration(seconds: number): string {
   return `${(seconds / 86_400).toFixed(1)} d`;
 }
 const pct = (v: number | null) => (v === null ? "–" : `${v >= 99.995 ? "100" : v.toFixed(2)}%`);
-const every = (s: number) => (s % 3600 === 0 ? `${s / 3600} h` : s % 60 === 0 ? `${s / 60} min` : `${s} s`);
+const every = (t: T, s: number) =>
+  s % 3600 === 0 ? t("units.hours", { n: s / 3600 }) : s % 60 === 0 ? t("units.minutes", { n: s / 60 }) : t("units.seconds", { n: s });
 
 /** What a person sees: a check nobody has heard from for three intervals is stale, whatever it was before. */
 type Shown = State | "stale" | "paused";
 const shownOf = (c: Check): Shown => (c.paused ? "paused" : c.status.stale ? "stale" : c.status.state);
 const SHOWN_ORDER: Shown[] = ["down", "degraded", "stale", "unknown", "paused", "up"];
-const SHOWN_LABEL: Record<Shown, string> = { down: "Down", degraded: "Degraded", stale: "Stale", unknown: "Waiting", paused: "Paused", up: "Up" };
+const SHOWN_LABEL = (t: T): Record<Shown, string> => ({
+  down: t("shown.down"),
+  degraded: t("shown.degraded"),
+  stale: t("shown.stale"),
+  unknown: t("shown.waiting"),
+  paused: t("shown.paused"),
+  up: t("shown.up"),
+});
 const SHOWN_TONE: Record<Shown, "danger" | "warning" | "neutral" | "info" | "success"> = {
   down: "danger",
   degraded: "warning",
@@ -83,8 +94,9 @@ const SHOWN_TONE: Record<Shown, "danger" | "warning" | "neutral" | "info" | "suc
 };
 
 function StateBadge({ check }: { check: Check }) {
+  const t = useT();
   const s = shownOf(check);
-  return <StatusBadge tone={SHOWN_TONE[s]}>{SHOWN_LABEL[s]}</StatusBadge>;
+  return <StatusBadge tone={SHOWN_TONE[s]}>{SHOWN_LABEL(t)[s]}</StatusBadge>;
 }
 
 function Code({ children }: { children: ReactNode }) {
@@ -92,13 +104,18 @@ function Code({ children }: { children: ReactNode }) {
 }
 
 /** What the check expects, in words, for the list. */
-function expectation(c: Pick<Check, "type" | "expect">): string {
+function expectation(t: T, c: Pick<Check, "type" | "expect">): string {
   const e = c.expect;
   if (c.type === "http")
-    return [e.status !== undefined ? `status ${e.status}` : "status below 400", e.text !== undefined && `text "${e.text}"`].filter(Boolean).join(", ");
-  if (c.type === "dns") return e.recordType ? `${e.recordType}${e.record ? ` ${e.record}` : ""}` : "any answer";
-  if (c.type === "tls") return e.minDays === undefined ? "certificate not yet critical" : `valid for ${e.minDays}+ days`;
-  return "connects";
+    return [
+      e.status !== undefined ? t("expectation.status", { status: e.status }) : t("expectation.statusBelow400"),
+      e.text !== undefined && t("expectation.text", { text: e.text }),
+    ]
+      .filter(Boolean)
+      .join(", ");
+  if (c.type === "dns") return e.recordType ? `${e.recordType}${e.record ? ` ${e.record}` : ""}` : t("expectation.anyAnswer");
+  if (c.type === "tls") return e.minDays === undefined ? t("expectation.notYetCritical") : t("expectation.validForDays", { days: e.minDays });
+  return t("expectation.connects");
 }
 
 // ---------------------------------------------------------------- Checks
@@ -239,7 +256,7 @@ function ChecksPage({ call, summary }: { call: Call; summary?: Summary; reload: 
           label={msg("checksPage.state")}
           selected={states}
           onChange={setStates}
-          options={SHOWN_ORDER.map((k) => ({ value: k, label: SHOWN_LABEL[k], count: all.filter((c) => shownOf(c) === k).length }))}
+          options={SHOWN_ORDER.map((k) => ({ value: k, label: SHOWN_LABEL(msg)[k], count: all.filter((c) => shownOf(c) === k).length }))}
         />
         {groupNames.length > 1 && (
           <FacetFilter
@@ -371,11 +388,11 @@ function CheckPage({ call, id, reload }: { call: Call; id: string; reload: () =>
             ? msg("checkPage.everyDownAfter", {
                 value: check.type.toUpperCase(),
                 target: check.target,
-                value2: check.server ? ` on ${check.server}` : "",
-                expectation: expectation(check),
-                every: every(check.intervalSeconds),
+                value2: check.server ? ` ${msg("checksPage.on", { server: check.server })}` : "",
+                expectation: expectation(msg, check),
+                every: every(msg, check.intervalSeconds),
                 plural: msg("plurals.failure", { count: check.failuresToDown }),
-                value3: check.public ? " · on the status page" : "",
+                value3: check.public ? ` · ${msg("checkPage.onTheStatusPage")}` : "",
               })
             : undefined
         }
@@ -421,7 +438,7 @@ function CheckPage({ call, id, reload }: { call: Call; id: string; reload: () =>
         <Panel title={msg("checkPage.responseTime")}>
           <TimeSeriesChart
             label={msg("checkPage.responseTimeOf", { value: check?.name ?? "the check" })}
-            series={[{ id: "latency", name: "Response time", data: timed.map((r) => r.latencyMs ?? 0) }]}
+            series={[{ id: "latency", name: msg("checkPage.responseTime"), data: timed.map((r) => r.latencyMs ?? 0) }]}
             labels={timed.map((r) => new Date(r.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))}
             format={(v) => `${Math.round(v)} ms`}
             area
@@ -659,11 +676,14 @@ function SettingsPage({ page }: { page: "account" | "members" | "signin" | "toke
 function Product() {
   const msg = useT();
   const [theme, setTheme] = useThemePreference();
+  const [, setLocale] = useLocalePreference();
   const { me, can } = useAuth();
+  const account = useAccountMenu();
   const route = parseRoute(usePath());
   const [summary, setSummary] = useState<Summary>();
   const [products, setProducts] = useState<Array<ProductLink & { id: ProductId }>>([]);
   const call = useApi();
+  const onSearch = useMemo(() => search(call, msg), [call, msg]);
 
   // The install's other products (OPENASY_PRODUCTS), for the switcher; ids this UI does not know are left out.
   useEffect(() => {
@@ -686,7 +706,6 @@ function Product() {
     { id: "outages", label: msg("product.outages"), icon: TriangleAlert, count: summary?.openOutages || undefined },
   ];
   const footerNav = [
-    { id: "setup", label: msg("product.setup"), icon: Settings2 },
     ...(can("admin")
       ? [
           { id: "members", label: msg("product.members"), icon: Users },
@@ -702,6 +721,7 @@ function Product() {
   return (
     <AppShell
       product="uptime"
+      onSearch={onSearch}
       about={colophon}
       nav={nav}
       activeNav={active}
@@ -711,10 +731,12 @@ function Product() {
         const to = products.find((p) => p.id === id);
         if (to) window.location.assign(to.url);
       }}
-      footerNav={footerNav}
-      user={{ name: me.user.name, role: roleName }}
+      footerNav={account.settings(footerNav)}
+      setup
+      user={{ name: me.user.name, role: roleName, ...account.user }}
       theme={theme}
       onThemeChange={setTheme}
+      onLanguageChange={(code) => setLocale(toLocale(code))}
     >
       {route.page === "checks" ? (
         <ChecksPage call={call} summary={summary} reload={reload} />
@@ -734,9 +756,10 @@ function Product() {
 export function App() {
   const installBrand = useInstallBrand();
   const [theme] = useThemePreference();
+  const [locale] = useLocalePreference();
   return (
     // The install's brand from config/brand.env (ADR 0053); OpenAsy's own look where it sets none.
-    <BrandProvider theme={theme} brand={{ name: "OpenAsy", organization: undefined, ...installBrand }} className="min-h-screen">
+    <BrandProvider theme={theme} locale={locale} brand={{ name: "OpenAsy", organization: undefined, ...installBrand }} className="min-h-screen">
       <AuthGate product="OpenAsy Uptime">
         <Product />
       </AuthGate>

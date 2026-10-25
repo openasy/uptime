@@ -72,7 +72,8 @@
     "cancel": "Cancel",
     "delete2": "Delete",
     "addedHereBefore": "Added here before the file",
-    "copyThisIntoTheEndpointsFile": "It keeps running. Copy this into the endpoints file: once the entry is there, it takes the check over with its results and outages."
+    "copyThisIntoTheEndpointsFile": "It keeps running. Copy this into the endpoints file: once the entry is there, it takes the check over with its results and outages.",
+    "onTheStatusPage": "on the status page"
   },
   "outagesPage": {
     "check": "Check",
@@ -121,5 +122,30 @@
     "check_other": "{{count}} checks",
     "failure_one": "{{count}} failure",
     "failure_other": "{{count}} failures"
+  },
+  "search": {
+    "check": "Check"
+  },
+  "shown": {
+    "down": "Down",
+    "degraded": "Degraded",
+    "stale": "Stale",
+    "waiting": "Waiting",
+    "paused": "Paused",
+    "up": "Up"
+  },
+  "units": {
+    "hours": "{{n}} h",
+    "minutes": "{{n}} min",
+    "seconds": "{{n}} s"
+  },
+  "expectation": {
+    "status": "status {{status}}",
+    "statusBelow400": "status below 400",
+    "text": "text \"{{text}}\"",
+    "anyAnswer": "any answer",
+    "notYetCritical": "certificate not yet critical",
+    "validForDays": "valid for {{days}}+ days",
+    "connects": "connects"
   }
 }
