@@ -51,7 +51,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, MfaSetupRequired, Unauthorized, type Check, type Outage, type Overview, type ProductLink, type Result, type State, type Summary } from "./api.ts";
-import { useT, type T } from "./i18n.ts";
+import { useT, type T, viewerLocale, setViewerLocale, fixed } from "./i18n.ts";
 import { search } from "./search.ts";
 
 /** The incident an outage opened in Incidents: its key as a link, or that it waits and why. */
@@ -111,10 +111,10 @@ type Call = ReturnType<typeof useApi>;
 function duration(seconds: number): string {
   if (seconds < 60) return `${seconds} s`;
   if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
-  if (seconds < 86_400) return `${(seconds / 3600).toFixed(1)} h`;
-  return `${(seconds / 86_400).toFixed(1)} d`;
+  if (seconds < 86_400) return `${fixed(seconds / 3600, 1)} h`;
+  return `${fixed(seconds / 86_400, 1)} d`;
 }
-const pct = (v: number | null) => (v === null ? "–" : `${v >= 99.995 ? "100" : v.toFixed(2)}%`);
+const pct = (v: number | null) => (v === null ? "–" : `${v >= 99.995 ? "100" : fixed(v, 2)}%`);
 const every = (t: T, s: number) =>
   s % 3600 === 0 ? t("units.hours", { n: s / 3600 }) : s % 60 === 0 ? t("units.minutes", { n: s / 60 }) : t("units.seconds", { n: s });
 
@@ -196,8 +196,8 @@ function OverviewPage({ call, summary }: { call: Call; summary?: Summary }) {
   const [o, setO] = useState<Overview>();
   useEffect(() => void call<Overview>("/api/v1/overview").then(setO, () => {}), [call, summary]);
   const s = summary;
-  const day = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
-  const hour = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const day = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString(viewerLocale(), { month: "short", day: "numeric", timeZone: "UTC" });
+  const hour = (iso: string) => new Date(iso).toLocaleTimeString(viewerLocale(), { hour: "2-digit", minute: "2-digit" });
   // Hours before the first result are left out; an hour without one keeps the hour before, rather than reading as 0 ms.
   const latency = (() => {
     const from = Math.max(0, o?.latency.ms.findIndex((v) => v !== null) ?? 0);
@@ -485,7 +485,7 @@ function ChecksPage({ call, summary }: { call: Call; summary?: Summary; reload: 
           empty={
             <EmptyState title={msg("checksPage.noChecksYet")}>
               {msg("checksPage.theyComeFromTheEndpointsFile")}
-              <div className="mt-3 text-left">
+              <div className="mt-3 text-start">
                 <Code>{EXAMPLE}</Code>
               </div>
             </EmptyState>
@@ -561,7 +561,7 @@ function CheckPage({ call, id, reload }: { call: Call; id: string; reload: () =>
       id: "start",
       header: msg("checkPage.started"),
       sortValue: (o) => o.startedAt,
-      cell: (o) => <span className="whitespace-nowrap text-xs">{new Date(o.startedAt).toLocaleString()}</span>,
+      cell: (o) => <span className="whitespace-nowrap text-xs">{new Date(o.startedAt).toLocaleString(viewerLocale())}</span>,
     },
     {
       id: "length",
@@ -647,7 +647,7 @@ function CheckPage({ call, id, reload }: { call: Call; id: string; reload: () =>
           <TimeSeriesChart
             label={msg("checkPage.responseTimeOf", { value: check?.name ?? "the check" })}
             series={[{ id: "latency", name: msg("checkPage.responseTime"), data: timed.map((r) => r.latencyMs ?? 0) }]}
-            labels={timed.map((r) => new Date(r.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))}
+            labels={timed.map((r) => new Date(r.time).toLocaleTimeString(viewerLocale(), { hour: "2-digit", minute: "2-digit" }))}
             format={(v) => `${Math.round(v)} ms`}
             area
             height={160}
@@ -745,7 +745,7 @@ function OutagesPage({ call }: { call: Call }) {
       id: "start",
       header: t("outagesPage.started"),
       sortValue: (o) => o.startedAt,
-      cell: (o) => <span className="whitespace-nowrap text-xs">{new Date(o.startedAt).toLocaleString()}</span>,
+      cell: (o) => <span className="whitespace-nowrap text-xs">{new Date(o.startedAt).toLocaleString(viewerLocale())}</span>,
     },
     {
       id: "length",
@@ -969,6 +969,7 @@ export function App() {
   const installBrand = useInstallBrand();
   const [theme] = useThemePreference();
   const [locale] = useLocalePreference();
+  setViewerLocale(locale);
   return (
     // The install's brand from config/brand.env (ADR 0053); OpenAsy's own look where it sets none.
     <BrandProvider theme={theme} locale={locale} brand={{ name: "OpenAsy", organization: undefined, ...installBrand }} className="min-h-screen">
