@@ -838,7 +838,7 @@ jobs:
             {t("setupPage.thePublicStatusPageIs")} <a href={`${origin}/status`}>{origin}/status</a>
             {t("setupPage.plainHtmlWithNoScript")}
           </li>
-          <li>/metrics has each check's state and staleness, to alert on in your Prometheus.</li>
+          <li>{t("setupPage.metricsHasEachCheck")}</li>
         </ul>
       </Panel>
     </>

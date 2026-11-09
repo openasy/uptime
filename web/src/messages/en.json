@@ -125,7 +125,8 @@
     "oneFailureMakesACheck": "One failure makes a check degraded; the failures you set in a row make it down and open an outage. One pass makes it up.",
     "aCheckWithNoResult": "A check with no result for three of its intervals is stale: the page says the runner stopped instead of showing an old state as current.",
     "thePublicStatusPageIs": "The public status page is at",
-    "plainHtmlWithNoScript": ", plain HTML with no script. It shows only checks marked public, by name, group and state; a paused check shows as maintenance."
+    "plainHtmlWithNoScript": ", plain HTML with no script. It shows only checks marked public, by name, group and state; a paused check shows as maintenance.",
+    "metricsHasEachCheck": "/metrics has each check's state and staleness, to alert on in your Prometheus."
   },
   "settingsPage": {
     "adminsOnly": "Admins only",

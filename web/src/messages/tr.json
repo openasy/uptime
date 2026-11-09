@@ -125,7 +125,8 @@
     "oneFailureMakesACheck": "Tek bir başarısızlık kontrolü sorunlu yapar; art arda ayarladığınız sayıda başarısızlık onu çalışmaz duruma düşürür ve bir kesinti açar. Tek bir başarı onu yeniden çalışır yapar.",
     "aCheckWithNoResult": "Üç aralık boyunca sonuç almayan bir kontrol güncel değildir: sayfa, eski bir durumu güncelmiş gibi göstermek yerine çalıştırıcının durduğunu söyler.",
     "thePublicStatusPageIs": "Herkese açık durum sayfası şurada:",
-    "plainHtmlWithNoScript": ", betiksiz düz HTML. Yalnızca herkese açık işaretlenen kontrolleri adı, grubu ve durumuyla gösterir; duraklatılmış bir kontrol bakımda görünür."
+    "plainHtmlWithNoScript": ", betiksiz düz HTML. Yalnızca herkese açık işaretlenen kontrolleri adı, grubu ve durumuyla gösterir; duraklatılmış bir kontrol bakımda görünür.",
+    "metricsHasEachCheck": "/metrics, Prometheus'unuzda uyarı kurabilmeniz için her kontrolün durumunu ve ne kadar eskidiğini verir."
   },
   "settingsPage": {
     "adminsOnly": "Yalnızca yöneticiler",

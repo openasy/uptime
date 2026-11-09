@@ -125,7 +125,8 @@
     "oneFailureMakesACheck": "Ein Fehlschlag macht eine Prüfung beeinträchtigt; die von Ihnen festgelegte Zahl an Fehlschlägen in Folge lässt sie ausfallen und eröffnet einen Ausfall. Ein Erfolg macht sie wieder verfügbar.",
     "aCheckWithNoResult": "Eine Prüfung ohne Ergebnis über drei ihrer Intervalle ist veraltet: Die Seite sagt, dass der Runner beendet wurde, statt einen alten Zustand als aktuell zu zeigen.",
     "thePublicStatusPageIs": "Die öffentliche Statusseite ist unter",
-    "plainHtmlWithNoScript": ", schlichtes HTML ohne Skript. Sie zeigt nur als öffentlich markierte Prüfungen mit Name, Gruppe und Zustand; eine pausierte Prüfung erscheint als Wartung."
+    "plainHtmlWithNoScript": ", schlichtes HTML ohne Skript. Sie zeigt nur als öffentlich markierte Prüfungen mit Name, Gruppe und Zustand; eine pausierte Prüfung erscheint als Wartung.",
+    "metricsHasEachCheck": "/metrics liefert den Zustand jedes Checks und wie veraltet er ist, um in Ihrem Prometheus darauf zu alarmieren."
   },
   "settingsPage": {
     "adminsOnly": "Nur für Admins",
